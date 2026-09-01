@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{ app_name }}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}" />
+</head>
+<body>
+    <div class="background-glow glow-a"></div>
+    <div class="background-glow glow-b"></div>
+
+    <div class="shell">
+        <header class="hero">
+            <div class="hero-brand">
+                <img class="hero-logo" src="{{ url_for('static', filename='museum.ico') }}" alt="Logo Museum van de 20e Eeuw" />
+                <div class="hero-copy">
+                    <span class="eyebrow">Museum van de 20e Eeuw</span>
+                    <h1>{{ app_name }}</h1>
+                    <p>
+                        Overzicht en GitHub-werkstroom voor museumsoftware.
+                    </p>
+                </div>
+            </div>
+
+            <div class="hero-meta">
+                <a class="settings-gear" href="{{ url_for('dashboard') if active_nav == 'settings_page' else url_for('settings_page') }}" title="{{ 'Instellingen sluiten' if active_nav == 'settings_page' else 'Instellingen' }}" aria-label="{{ 'Instellingen sluiten' if active_nav == 'settings_page' else 'Instellingen' }}">
+                    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 0 0-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 0 0-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 0 0-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 0 0-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 0 0 1.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" stroke-linecap="round" stroke-linejoin="round"/>
+                        <circle cx="12" cy="12" r="3" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </a>
+
+                <div class="clock-card">
+                    <span class="clock-label">Vandaag</span>
+                    <strong>{{ today }}</strong>
+                    <span class="clock-label">Tijd</span>
+                    <strong>{{ now_time }}</strong>
+                </div>
+
+                <div class="org-card">
+                    {% if current_user %}
+                        <div class="account-actions">
+                            <span class="meta-text">Ingelogd als {{ current_user }}</span>
+                            <form method="post" action="{{ url_for('logout') }}">
+                                <button class="btn btn-ghost" type="submit">Uitloggen</button>
+                            </form>
+                        </div>
+                    {% else %}
+                        <span class="meta-text">Nog niet ingelogd</span>
+                    {% endif %}
+                </div>
+            </div>
+        </header>
+
+        {% if system_checks %}
+            <section class="system-check-panel" aria-label="Systeemcontrole">
+                <div class="system-check-head">
+                    <span class="eyebrow">Systeemcontrole</span>
+                    <form method="post" action="{{ url_for('refresh_system_checks') }}" data-api-form="true" data-reload="true">
+                        <button class="btn btn-ghost btn-small" type="submit">Opnieuw controleren</button>
+                    </form>
+                </div>
+                <ul class="system-check-list">
+                    {% for check in system_checks %}
+                        <li class="system-check-item level-{{ check.level }}">
+                            <span class="system-check-icon" aria-hidden="true">{{ check.icon }}</span>
+                            <span class="system-check-text">
+                                <strong>{{ check.name }}</strong>
+                                <span class="system-check-version">
+                                    {% if check.local_version %}{{ check.local_version }}{% else %}niet geinstalleerd{% endif %}
+                                    {% if check.latest_version %} · laatste: {{ check.latest_version }}{% endif %}
+                                </span>
+                                <span class="system-check-message">{{ check.message }}</span>
+                            </span>
+                        </li>
+                    {% endfor %}
+                </ul>
+            </section>
+        {% endif %}
+
+        <nav class="main-nav" aria-label="Hoofdmenu">
+            {% for item in nav_items %}
+                <a
+                    class="nav-link {% if active_nav == item.endpoint %}active{% endif %}"
+                    href="{{ url_for(item.endpoint) }}"
+                >
+                    {{ item.label }}
+                </a>
+            {% endfor %}
+        </nav>
+
+        {% if submenu_items %}
+            <nav class="sub-nav" aria-label="Submenu">
+                {% for item in submenu_items %}
+                    <a class="sub-link {% if item.active == 'true' %}active{% endif %}" href="{{ item.url }}">
+                        {{ item.label }}
+                    </a>
+                {% endfor %}
+            </nav>
+        {% endif %}
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <section class="flash-stack">
+                    {% for category, message in messages %}
+                        <div class="flash {{ category }}">{{ message }}</div>
+                    {% endfor %}
+                </section>
+            {% endif %}
+        {% endwith %}
+
+        <main>
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+
+    <div class="toast-host" id="toast-host"></div>
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

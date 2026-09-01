@@ -1,0 +1,8 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "/^Get-NetTCPConnection -LocalPort 5080 -State Listen \\| Select-Object -ExpandProperty OwningProcess$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
+}

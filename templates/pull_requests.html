@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="panel">
+    <div class="panel-head">
+        <div>
+            <span class="eyebrow">Pull Requests</span>
+            <h2>{{ pull_total }} open pull requests</h2>
+        </div>
+    </div>
+
+    <div class="list-stack">
+        {% for pull in pulls %}
+            <article class="list-card stack">
+                <div class="list-card-top">
+                    <div>
+                        <h3>{{ pull.title }}</h3>
+                        <p class="muted">
+                            {{ pull.repo_name }} · #{{ pull.number }} · bijgewerkt {{ pull.updated_at|datetime_relative }}
+                        </p>
+                    </div>
+                    <a class="btn btn-ghost" href="{{ url_for('repository_detail', repo_name=pull.repo_name, section='pulls') }}">
+                        Repo openen
+                    </a>
+                </div>
+
+                <div class="meta-row">
+                    <span>Auteur: {{ pull.user.login }}</span>
+                    <span>Status: open</span>
+                </div>
+
+                <form
+                    class="inline-form"
+                    method="post"
+                    action="{{ url_for('merge_pull_request', repo_name=pull.repo_name, pull_number=pull.number) }}"
+                    data-api-form="true"
+                    data-reload="true"
+                >
+                    <label>
+                        Merge-methode
+                        <select name="merge_method">
+                            <option value="squash">Squash</option>
+                            <option value="merge">Merge commit</option>
+                            <option value="rebase">Rebase</option>
+                        </select>
+                    </label>
+                    <button class="btn btn-primary" type="submit">Merge PR</button>
+                </form>
+            </article>
+        {% endfor %}
+    </div>
+</section>
+{% endblock %}

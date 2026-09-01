@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="content-grid">
+    <article class="panel">
+        <div class="panel-head">
+            <div>
+                <span class="eyebrow">Nieuw issue</span>
+                <h2>Snel een issue aanmaken</h2>
+            </div>
+        </div>
+
+        <form class="stack" method="post" action="{{ url_for('create_issue') }}" data-api-form="true" data-reload="true">
+            <label>
+                Repository
+                <select name="repo_name" required>
+                    <option value="">Kies een repository</option>
+                    {% for repo in repositories %}
+                        <option value="{{ repo.name }}">{{ repo.name }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+
+            <label>
+                Titel
+                <input type="text" name="title" placeholder="Bijvoorbeeld: Update homepage content" required />
+            </label>
+
+            <label>
+                Omschrijving
+                <textarea name="body" placeholder="Beschrijf kort wat er moet gebeuren."></textarea>
+            </label>
+
+            <div class="action-row">
+                <button class="btn btn-primary" type="submit">Issue aanmaken</button>
+            </div>
+        </form>
+    </article>
+
+    <article class="panel">
+        <div class="panel-head">
+            <div>
+                <span class="eyebrow">Open issues</span>
+                <h2>{{ issue_total }} open issues</h2>
+            </div>
+        </div>
+
+        <div class="list-stack">
+            {% for issue in issues %}
+                <article class="list-card stack">
+                    <div class="list-card-top">
+                        <div>
+                            <h3>{{ issue.title }}</h3>
+                            <p class="muted">
+                                {{ issue.repo_name }} · #{{ issue.number }} · {{ issue.updated_at|datetime_relative }}
+                            </p>
+                        </div>
+                        <form
+                            method="post"
+                            action="{{ url_for('close_issue', repo_name=issue.repo_name, issue_number=issue.number) }}"
+                            data-api-form="true"
+                            data-reload="true"
+                        >
+                            <button class="btn btn-warn" type="submit">Sluiten</button>
+                        </form>
+                    </div>
+                    <div class="meta-row">
+                        <span>Auteur: {{ issue.user.login }}</span>
+                        <a href="{{ url_for('repository_detail', repo_name=issue.repo_name, section='issues') }}">Repo bekijken</a>
+                    </div>
+                </article>
+            {% endfor %}
+        </div>
+    </article>
+</section>
+{% endblock %}

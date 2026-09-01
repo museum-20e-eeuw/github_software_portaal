@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="content-grid">
+    <article class="panel stack">
+        <div class="panel-head">
+            <div>
+                <span class="eyebrow">Instellingen</span>
+                <h2>Lokale werkmap</h2>
+            </div>
+        </div>
+
+        <p class="muted">
+            Hier bepaal je in welke map op deze computer softwareprojecten lokaal worden opgehaald
+            wanneer je op "Lokaal ophalen" klikt vanuit een project.
+        </p>
+
+        <form method="post" action="{{ url_for('settings_page') }}" class="stack" id="settings-form">
+            <label>
+                Map voor lokale projecten
+                <div class="folder-picker-row">
+                    <input type="text" name="workspace_root" id="workspace-root-input" value="{{ workspace_root }}" autocomplete="off" />
+                    <button class="btn btn-ghost" type="button" id="browse-folder-btn">Bladeren...</button>
+                </div>
+            </label>
+
+            <label>
+                Personal Access Token (GitHub)
+                <input type="password" name="personal_access_token" id="pat-input" value="{{ personal_access_token }}" autocomplete="off" placeholder="ghp_..." />
+            </label>
+            <p class="muted">
+                Wanneer hier een token staat, log je automatisch in als {{ default_username }} en hoef je dit niet
+                telkens opnieuw te doen. Het token wordt lokaal in <code>config.json</code> bewaard op deze computer.
+            </p>
+
+            <div class="action-row">
+                <button class="btn btn-primary" type="submit">Opslaan</button>
+                <a class="btn btn-ghost" href="{{ url_for('dashboard') }}">Annuleren</a>
+            </div>
+        </form>
+    </article>
+</section>
+
+<div class="modal-backdrop" id="folder-modal-backdrop" hidden>
+    <div class="panel modal-panel stack">
+        <div class="panel-head">
+            <h2>Kies een map</h2>
+        </div>
+        <p class="muted" id="folder-current-path">Schijven</p>
+        <div class="folder-list" id="folder-list"></div>
+        <div class="action-row">
+            <button class="btn btn-ghost" type="button" id="folder-up-btn">Omhoog</button>
+            <button class="btn btn-ghost" type="button" id="folder-cancel-btn">Annuleren</button>
+            <button class="btn btn-primary" type="button" id="folder-select-btn">Deze map kiezen</button>
+        </div>
+    </div>
+</div>
+{% endblock %}

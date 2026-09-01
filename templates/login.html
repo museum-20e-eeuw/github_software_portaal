@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="panel auth-panel">
+    <div class="panel-head">
+        <div>
+            <span class="eyebrow">Inloggen</span>
+            <h2>GitHub toegang voor {{ default_username }}</h2>
+        </div>
+    </div>
+
+    <div class="two-col">
+        <form class="stack" method="post" action="{{ url_for('login') }}">
+            <input type="hidden" name="next" value="{{ next_url }}" />
+
+            <label>
+                Login naam
+                <input type="text" name="username" value="{{ default_username }}" readonly />
+            </label>
+
+            <label>
+                Personal access token
+                <input type="password" name="token" placeholder="ghp_..." required />
+            </label>
+
+            <p class="muted">
+                Gebruik een token met minimaal <strong>repo</strong>, <strong>read:org</strong> en
+                <strong>workflow</strong> rechten.
+            </p>
+
+            <div class="action-row">
+                <button class="btn btn-primary" type="submit">Inloggen</button>
+                <a class="btn btn-ghost" href="{{ url_for('help_page') }}">Hulp</a>
+            </div>
+        </form>
+
+        <aside class="soft-card stack">
+            <h3>Wat kan deze app?</h3>
+            <ul class="feature-list">
+                <li>Repositories van de museum-organisatie tonen</li>
+                <li>Open pull requests snel bekijken en mergen</li>
+                <li>Issues aanmaken en sluiten</li>
+                <li>GitHub Actions workflows opnieuw starten of annuleren</li>
+            </ul>
+        </aside>
+    </div>
+</section>
+{% endblock %}

@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="panel stack">
+    <div class="panel-head">
+        <div>
+            <span class="eyebrow">Repository detail</span>
+            <h2>{{ repo.name }}</h2>
+            <p class="muted">{{ repo.description or "Geen beschrijving beschikbaar." }}</p>
+        </div>
+        <a class="btn btn-ghost" href="{{ url_for('repositories') }}">Terug naar repositories</a>
+    </div>
+
+    <div class="meta-row">
+        <span>Default branch: {{ repo.default_branch }}</span>
+        <span>Taal: {{ repo.language or "Onbekend" }}</span>
+        <span>Open items: {{ repo.open_issues_count }}</span>
+        <span>Bijgewerkt: {{ repo.pushed_at|datetime_full }}</span>
+    </div>
+</section>
+
+{% if section == "overview" %}
+    <section class="content-grid">
+        <article class="panel">
+            <div class="panel-head">
+                <h2>Open pull requests</h2>
+            </div>
+            <div class="list-stack">
+                {% for pull in pulls %}
+                    <div class="list-card">
+                        <div>
+                            <h3>{{ pull.title }}</h3>
+                            <p class="muted">#{{ pull.number }} · {{ pull.updated_at|datetime_relative }}</p>
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+        </article>
+
+        <article class="panel">
+            <div class="panel-head">
+                <h2>Open issues</h2>
+            </div>
+            <div class="list-stack">
+                {% for issue in issues %}
+                    <div class="list-card">
+                        <div>
+                            <h3>{{ issue.title }}</h3>
+                            <p class="muted">#{{ issue.number }} · {{ issue.updated_at|datetime_relative }}</p>
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+        </article>
+
+        <article class="panel">
+            <div class="panel-head">
+                <h2>Recente workflows</h2>
+            </div>
+            <div class="list-stack">
+                {% for run in workflow_runs %}
+                    <div class="list-card">
+                        <div>
+                            <h3>{{ run.name }}</h3>
+                            <p class="muted">{{ run.status }} / {{ run.conclusion or "bezig" }}</p>
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+        </article>
+
+        <article class="panel">
+            <div class="panel-head">
+                <h2>Belangrijkste branches</h2>
+            </div>
+            <div class="list-stack">
+                {% for branch in branches %}
+                    <div class="list-card">
+                        <div>
+                            <h3>{{ branch.name }}</h3>
+                            <p class="muted">{% if branch.protected %}Beveiligd{% else %}Niet beveiligd{% endif %}</p>
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+        </article>
+    </section>
+{% elif section == "pulls" %}
+    <section class="panel">
+        <div class="list-stack">
+            {% for pull in pulls %}
+                <article class="list-card stack">
+                    <div class="list-card-top">
+                        <div>
+                            <h3>{{ pull.title }}</h3>
+                            <p class="muted">#{{ pull.number }} · {{ pull.user.login }} · {{ pull.updated_at|datetime_relative }}</p>
+                        </div>
+                    </div>
+                    <form
+                        class="inline-form"
+                        method="post"
+                        action="{{ url_for('merge_pull_request', repo_name=repo.name, pull_number=pull.number) }}"
+                        data-api-form="true"
+                        data-reload="true"
+                    >
+                        <label>
+                            Merge-methode
+                            <select name="merge_method">
+                                <option value="squash">Squash</option>
+                                <option value="merge">Merge commit</option>
+                                <option value="rebase">Rebase</option>
+                            </select>
+                        </label>
+                        <button class="btn btn-primary" type="submit">Merge PR</button>
+                    </form>
+                </article>
+            {% endfor %}
+        </div>
+    </section>
+{% elif section == "issues" %}
+    <section class="panel">
+        <div class="list-stack">
+            {% for issue in issues %}
+                <article class="list-card stack">
+                    <div class="list-card-top">
+                        <div>
+                            <h3>{{ issue.title }}</h3>
+                            <p class="muted">#{{ issue.number }} · {{ issue.user.login }} · {{ issue.updated_at|datetime_relative }}</p>
+                        </div>
+                        <form
+                            method="post"
+                            action="{{ url_for('close_issue', repo_name=repo.name, issue_number=issue.number) }}"
+                            data-api-form="true"
+                            data-reload="true"
+                        >
+                            <button class="btn btn-warn" type="submit">Sluiten</button>
+                        </form>
+                    </div>
+                </article>
+            {% endfor %}
+        </div>
+    </section>
+{% elif section == "workflows" %}
+    <section class="panel">
+        <div class="list-stack">
+            {% for run in workflow_runs %}
+                <article class="list-card stack">
+                    <div class="list-card-top">
+                        <div>
+                            <h3>{{ run.name }}</h3>
+                            <p class="muted">{{ run.event }} · {{ run.created_at|datetime_relative }}</p>
+                        </div>
+                    </div>
+                    <div class="meta-row">
+                        <span>Status: {{ run.status }}</span>
+                        <span>Conclusie: {{ run.conclusion or "bezig" }}</span>
+                        <span>Branch: {{ run.head_branch or "-" }}</span>
+                    </div>
+                    <div class="action-row">
+                        <form
+                            method="post"
+                            action="{{ url_for('rerun_workflow', repo_name=repo.name, run_id=run.id) }}"
+                            data-api-form="true"
+                            data-reload="true"
+                        >
+                            <button class="btn btn-primary" type="submit">Opnieuw starten</button>
+                        </form>
+                        <form
+                            method="post"
+                            action="{{ url_for('cancel_workflow', repo_name=repo.name, run_id=run.id) }}"
+                            data-api-form="true"
+                            data-reload="true"
+                        >
+                            <button class="btn btn-warn" type="submit">Annuleren</button>
+                        </form>
+                    </div>
+                </article>
+            {% endfor %}
+        </div>
+    </section>
+{% elif section == "branches" %}
+    <section class="panel">
+        <div class="list-stack">
+            {% for branch in branches %}
+                <article class="list-card">
+                    <div>
+                        <h3>{{ branch.name }}</h3>
+                        <p class="muted">
+                            {% if branch.protected %}Beschermde branch{% else %}Standaard branch-regels{% endif %}
+                        </p>
+                    </div>
+                </article>
+            {% endfor %}
+        </div>
+    </section>
+{% endif %}
+{% endblock %}

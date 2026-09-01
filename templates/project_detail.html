@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="panel stack" id="project-root" data-repo="{{ repo.name }}" data-default-branch="{{ repo.default_branch }}">
+    <div class="panel-head">
+        <div>
+            <span class="eyebrow">Softwareproject</span>
+            <h2>{{ repo.name }}</h2>
+            <p class="muted">{{ repo.description or "Geen beschrijving beschikbaar." }}</p>
+        </div>
+        <a class="btn btn-ghost" href="{{ url_for('dashboard') }}">Terug naar dashboard</a>
+    </div>
+
+    <div class="meta-row">
+        <span>Default branch: {{ repo.default_branch }}</span>
+        <span>Taal: {{ repo.language or "Onbekend" }}</span>
+        <span>Bijgewerkt: {{ repo.pushed_at|datetime_full }}</span>
+    </div>
+</section>
+
+<section class="content-grid">
+    <article class="panel">
+        <div class="panel-head">
+            <h2>Wie werkt hieraan?</h2>
+        </div>
+        <div class="list-stack">
+            {% if working_on %}
+                {% for item in working_on %}
+                    <div class="list-card">
+                        <div>
+                            <h3>{{ item.user }}</h3>
+                            <p class="muted">{{ item.title }} · branch {{ item.branch }} · {{ item.updated_at|datetime_relative }}</p>
+                        </div>
+                    </div>
+                {% endfor %}
+            {% else %}
+                <p class="muted">Niemand heeft momenteel een open pull request op dit project.</p>
+            {% endif %}
+        </div>
+    </article>
+
+    <article class="panel">
+        <div class="panel-head">
+            <h2>Lokale status</h2>
+        </div>
+        <div class="stack" id="local-status-block" data-cloned="{{ local_status.cloned|lower }}">
+            {% if not local_status.cloned %}
+                <p class="muted">Dit project staat nog niet lokaal op deze computer.</p>
+                <button class="btn btn-primary" type="button" id="clone-project-btn">Lokaal ophalen</button>
+            {% else %}
+                <div class="meta-row">
+                    <span>Branch: {{ local_status.local_branch }}</span>
+                    {% if local_status.in_sync %}
+                        <span class="status-chip status-ok">In sync met GitHub</span>
+                    {% else %}
+                        <span class="status-chip status-warn">Niet in sync</span>
+                    {% endif %}
+                </div>
+                {% if not local_status.in_sync %}
+                    <p class="muted">
+                        {% if local_status.behind %}{{ local_status.behind }} commit(s) achter op GitHub. {% endif %}
+                        {% if local_status.ahead %}{{ local_status.ahead }} lokale commit(s) nog niet gepusht. {% endif %}
+                        {% if local_status.has_local_changes %}Er zijn niet-opgeslagen lokale wijzigingen. {% endif %}
+                    </p>
+                    {% if local_status.behind %}
+                        <button class="btn btn-warn" type="button" id="update-project-btn">Bijwerken naar GitHub-versie</button>
+                    {% endif %}
+                {% endif %}
+            {% endif %}
+        </div>
+    </article>
+</section>
+
+{% if local_status.cloned %}
+<section class="panel">
+    <div class="panel-head">
+        <div>
+            <span class="eyebrow">Bestanden</span>
+            <h2>Kies een bestand om te openen</h2>
+        </div>
+    </div>
+    <div class="stack">
+        <label>
+            Bestand
+            <select id="file-select">
+                {% for file in files %}
+                    <option value="{{ file.path }}">{{ file.path }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <button class="btn btn-primary" type="button" id="open-file-btn">Openen in bijpassende tool</button>
+        <p class="muted" id="open-file-status"></p>
+    </div>
+</section>
+{% endif %}
+
+<div class="modal-backdrop" id="commit-modal-backdrop" hidden>
+    <div class="panel modal-panel stack">
+        <div class="panel-head">
+            <h2>Wijzigingen inchecken</h2>
+        </div>
+        <p class="muted" id="commit-changed-files"></p>
+        <label>
+            Jouw naam
+            <input type="text" id="commit-author" autocomplete="off" />
+        </label>
+        <label>
+            Versienummer
+            <input type="text" id="commit-version" placeholder="bijv. 1.2.0" autocomplete="off" />
+        </label>
+        <label>
+            Wat is er gewijzigd?
+            <textarea id="commit-summary" rows="3" placeholder="Beschrijf kort de wijziging"></textarea>
+        </label>
+        <div class="action-row">
+            <button class="btn btn-ghost" type="button" id="commit-cancel-btn">Annuleren</button>
+            <button class="btn btn-primary" type="button" id="commit-confirm-btn">Bevestigen en pushen</button>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="panel">
+    <div class="panel-head">
+        <div>
+            <span class="eyebrow">Repositories</span>
+            <h2>Alle projecten van {{ organization }}</h2>
+        </div>
+    </div>
+
+    <div class="card-grid">
+        {% for repo in repositories %}
+            <a class="repo-card" href="{{ url_for('repository_detail', repo_name=repo.name) }}">
+                <div class="repo-card-head">
+                    <h3>{{ repo.name }}</h3>
+                    <span class="status-chip">{{ repo.visibility }}</span>
+                </div>
+                <p>{{ repo.description or "Geen beschrijving beschikbaar." }}</p>
+                <div class="meta-row">
+                    <span>Taal: {{ repo.language or "Onbekend" }}</span>
+                    <span>Default branch: {{ repo.default_branch }}</span>
+                </div>
+                <div class="meta-row">
+                    <span>{{ repo.open_issues_count }} open items</span>
+                    <span>Bijgewerkt: {{ repo.pushed_at|datetime_full }}</span>
+                </div>
+            </a>
+        {% endfor %}
+    </div>
+</section>
+{% endblock %}

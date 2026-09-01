@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="content-grid">
+    <article class="panel stack">
+        <div class="panel-head">
+            <div>
+                <span class="eyebrow">Hulp</span>
+                <h2>Zo gebruik je de app</h2>
+            </div>
+        </div>
+
+        <ol class="help-list">
+            <li>Log in met het GitHub-account <strong>{{ default_username }}</strong>.</li>
+            <li>Plak een personal access token met repo-, org- en workflow-rechten.</li>
+            <li>Kies bovenin een hoofdmenu-item.</li>
+            <li>Gebruik in een repository het submenu voor detailacties.</li>
+        </ol>
+    </article>
+
+    <article class="panel stack">
+        <div class="panel-head">
+            <div>
+                <span class="eyebrow">Belangrijk</span>
+                <h2>Waarom via de GitHub API?</h2>
+            </div>
+        </div>
+
+        <ul class="feature-list">
+            <li>Alle gegevens worden rechtstreeks via GitHub API opgehaald.</li>
+            <li>Acties zoals issue aanmaken, sluiten, workflow rerunnen en PR mergen lopen ook via API-calls.</li>
+            <li>Het token wordt alleen in het geheugen van deze lokale sessie bewaard en niet naar schijf geschreven.</li>
+        </ul>
+    </article>
+</section>
+{% endblock %}

@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="panel">
+    <div class="panel-head">
+        <div>
+            <span class="eyebrow">GitHub Actions</span>
+            <h2>Recente workflow-runs</h2>
+        </div>
+    </div>
+
+    <div class="list-stack">
+        {% for run in workflow_runs %}
+            <article class="list-card stack">
+                <div class="list-card-top">
+                    <div>
+                        <h3>{{ run.name }}</h3>
+                        <p class="muted">
+                            {{ run.repo_name }} · {{ run.event }} · {{ run.created_at|datetime_relative }}
+                        </p>
+                    </div>
+                    <a class="btn btn-ghost" href="{{ url_for('repository_detail', repo_name=run.repo_name, section='workflows') }}">
+                        Repo openen
+                    </a>
+                </div>
+
+                <div class="meta-row">
+                    <span>Status: {{ run.status }}</span>
+                    <span>Conclusie: {{ run.conclusion or "bezig" }}</span>
+                    <span>Branch: {{ run.head_branch or "-" }}</span>
+                </div>
+
+                <div class="action-row">
+                    <form
+                        method="post"
+                        action="{{ url_for('rerun_workflow', repo_name=run.repo_name, run_id=run.id) }}"
+                        data-api-form="true"
+                        data-reload="true"
+                    >
+                        <button class="btn btn-primary" type="submit">Opnieuw starten</button>
+                    </form>
+                    <form
+                        method="post"
+                        action="{{ url_for('cancel_workflow', repo_name=run.repo_name, run_id=run.id) }}"
+                        data-api-form="true"
+                        data-reload="true"
+                    >
+                        <button class="btn btn-warn" type="submit">Annuleren</button>
+                    </form>
+                </div>
+            </article>
+        {% endfor %}
+    </div>
+</section>
+{% endblock %}

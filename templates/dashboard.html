@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="card-grid stats-grid">
+    <article class="stat-card">
+        <span class="eyebrow">Repositories</span>
+        <strong>{{ repo_count }}</strong>
+        <span class="muted">Beschikbare softwareprojecten</span>
+    </article>
+    <article class="stat-card">
+        <span class="eyebrow">Open pull requests</span>
+        <strong>{{ pull_total }}</strong>
+        <span class="muted">Werk dat klaarstaat voor beoordeling</span>
+    </article>
+</section>
+
+<section class="content-grid dashboard-content">
+    <article class="panel">
+        <div class="panel-head">
+            <div>
+                <span class="eyebrow">Werk starten</span>
+                <h2>Kies een softwareproject</h2>
+            </div>
+        </div>
+
+        <div class="card-grid dashboard-repo-grid">
+            {% for repo in repositories %}
+                <a class="repo-card" href="{{ url_for('project_detail', repo_name=repo.name) }}">
+                    <div class="repo-card-head">
+                        <h3>{{ repo.name }}</h3>
+                        <span class="status-chip">{{ repo.visibility }}</span>
+                    </div>
+                    <p>{{ repo.description or "Geen beschrijving beschikbaar." }}</p>
+                    <div class="meta-row">
+                        <span>{{ repo.language or "Onbekend" }}</span>
+                        <span>{{ repo.open_issues_count }} open items</span>
+                    </div>
+                </a>
+            {% endfor %}
+        </div>
+    </article>
+</section>
+{% endblock %}
