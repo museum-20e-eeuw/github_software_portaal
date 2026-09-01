@@ -1015,10 +1015,16 @@ def dashboard():
         for pull in pulls.get("items", [])
     ]
     active_work.sort(key=lambda item: item.get("updated_at") or "", reverse=True)
+
+    active_repo_names = {item["repo_name"] for item in active_work if item["repo_name"]}
+    repos_with_work = [repo for repo in repos if repo["name"] in active_repo_names]
+    other_repos = [repo for repo in repos if repo["name"] not in active_repo_names]
+    ordered_repos = repos_with_work + other_repos
+
     return render_template(
         "dashboard.html",
         active_nav="dashboard",
-        repositories=repos[:8],
+        repositories=ordered_repos,
         repo_count=len(repos),
         active_work=active_work[:6],
     )
