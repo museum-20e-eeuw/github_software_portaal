@@ -1004,12 +1004,23 @@ def logout():
 def dashboard():
     repos = get_org_repositories(g.auth.token)
     pulls = get_org_pull_requests(g.auth.token)
+    active_work = [
+        {
+            "user": pull.get("user", {}).get("login", "onbekend"),
+            "repo_name": pull.get("repo_name", ""),
+            "title": pull.get("title", ""),
+            "updated_at": pull.get("updated_at"),
+            "url": pull.get("html_url"),
+        }
+        for pull in pulls.get("items", [])
+    ]
+    active_work.sort(key=lambda item: item.get("updated_at") or "", reverse=True)
     return render_template(
         "dashboard.html",
         active_nav="dashboard",
         repositories=repos[:8],
         repo_count=len(repos),
-        pull_total=pulls.get("total_count", 0),
+        active_work=active_work[:6],
     )
 
 
@@ -1284,7 +1295,7 @@ def create_issue():
     title = str(payload.get("title", "")).strip()
     body = str(payload.get("body", "")).strip()
     if not repo_name:
-        return api_error("Kies eerst een repository.", 400)
+        return api_error("Kies eerst een softwareproject.", 400)
     if not title:
         return api_error("Een issue-titel is verplicht.", 400)
 

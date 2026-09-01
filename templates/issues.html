@@ -12,9 +12,9 @@
 
         <form class="stack" method="post" action="{{ url_for('create_issue') }}" data-api-form="true" data-reload="true">
             <label>
-                Repository
+                Softwareproject
                 <select name="repo_name" required>
-                    <option value="">Kies een repository</option>
+                    <option value="">Kies een softwareproject</option>
                     {% for repo in repositories %}
                         <option value="{{ repo.name }}">{{ repo.name }}</option>
                     {% endfor %}
@@ -66,7 +66,7 @@
                     </div>
                     <div class="meta-row">
                         <span>Auteur: {{ issue.user.login }}</span>
-                        <a href="{{ url_for('repository_detail', repo_name=issue.repo_name, section='issues') }}">Repo bekijken</a>
+                        <a href="{{ url_for('repository_detail', repo_name=issue.repo_name, section='issues') }}">Softwareproject bekijken</a>
                     </div>
                 </article>
             {% endfor %}

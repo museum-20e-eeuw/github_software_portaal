@@ -3,14 +3,27 @@
 {% block content %}
 <section class="card-grid stats-grid">
     <article class="stat-card">
-        <span class="eyebrow">Repositories</span>
+        <span class="eyebrow">Softwareprojecten</span>
         <strong>{{ repo_count }}</strong>
         <span class="muted">Beschikbare softwareprojecten</span>
     </article>
     <article class="stat-card">
-        <span class="eyebrow">Open pull requests</span>
-        <strong>{{ pull_total }}</strong>
-        <span class="muted">Werk dat klaarstaat voor beoordeling</span>
+        <span class="eyebrow">Wie werkt waaraan</span>
+        {% if active_work %}
+            <ul class="active-work-list">
+                {% for item in active_work %}
+                    <li>
+                        <a href="{{ item.url }}" target="_blank" rel="noopener">
+                            <strong>{{ item.user }}</strong> werkt aan
+                            <strong>{{ item.repo_name }}</strong>
+                            <span class="muted">— {{ item.title }}</span>
+                        </a>
+                    </li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <span class="muted">Op dit moment werkt niemand aan een softwareproject.</span>
+        {% endif %}
     </article>
 </section>
 
