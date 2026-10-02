@@ -34,6 +34,7 @@
                 <span class="eyebrow">Werk starten</span>
                 <h2>Kies een softwareproject</h2>
             </div>
+            <a class="btn btn-primary" href="{{ url_for('app_new.create_project') }}">Nieuw softwareproject</a>
         </div>
 
         <div class="card-grid dashboard-repo-grid">
@@ -47,6 +48,11 @@
                     <div class="meta-row">
                         <span>{{ repo.language or "Onbekend" }}</span>
                         <span>{{ repo.open_issues_count }} open items</span>
+                    </div>
+                    <div class="local-project-path">
+                        <span class="eyebrow">Lokale directory</span>
+                        <code title="{{ repo.local_path }}">{{ repo.local_path }}</code>
+                        <span class="muted">{{ "Lokaal aanwezig" if repo.cloned else "Nog niet lokaal opgehaald" }}</span>
                     </div>
                 </a>
             {% endfor %}

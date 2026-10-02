@@ -559,6 +559,23 @@ main {
     line-height: 1.55;
 }
 
+.local-project-path {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+    color: var(--ink-soft);
+}
+
+.local-project-path .eyebrow {
+    font-size: 0.62rem;
+}
+
+.local-project-path code {
+    overflow-wrap: anywhere;
+    font-size: 0.75rem;
+    line-height: 1.4;
+}
+
 /* Compacte repositorykaarten op het dashboard: snel scanbaar en minder hoog. */
 .dashboard-repo-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -682,6 +699,148 @@ textarea {
     flex-wrap: wrap;
     gap: 12px;
     align-items: end;
+}
+
+.workflow-progress {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.workflow-progress li {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 10px;
+    border-bottom: 2px solid var(--line);
+    color: var(--ink-soft);
+    font-size: 0.86rem;
+}
+
+.workflow-progress li.current {
+    border-color: var(--accent);
+    color: var(--ink);
+    font-weight: 700;
+}
+
+.workflow-progress li.complete {
+    border-color: var(--olive);
+}
+
+.workflow-progress li span {
+    display: inline-grid;
+    place-items: center;
+    width: 24px;
+    aspect-ratio: 1;
+    border: 1px solid currentColor;
+    border-radius: 50%;
+    font-size: 0.75rem;
+}
+
+.workflow-choice-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+}
+
+.workflow-choice {
+    display: grid;
+    align-content: start;
+    justify-items: start;
+    gap: 12px;
+    padding: 20px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: rgba(255, 250, 243, 0.44);
+}
+
+.workflow-choice-mark {
+    color: var(--accent);
+    font-size: 1.5rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.workflow-choice h3,
+.project-wizard h3 {
+    margin: 0;
+}
+
+.workflow-choice p {
+    margin: 0;
+    color: var(--ink-soft);
+    line-height: 1.5;
+}
+
+.workflow-radio-list {
+    display: grid;
+    gap: 10px;
+}
+
+.workflow-radio-option {
+    display: grid;
+    grid-template-columns: 20px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+    padding: 14px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: rgba(255, 250, 243, 0.44);
+    cursor: pointer;
+    font-weight: 400;
+}
+
+.workflow-radio-option:has(input:checked) {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+}
+
+.workflow-radio-option input[type="radio"] {
+    width: 18px;
+    margin: 0;
+    accent-color: var(--accent);
+}
+
+.workflow-radio-option > span:nth-child(2) {
+    display: grid;
+    gap: 3px;
+    min-width: 0;
+}
+
+.workflow-radio-option > span:nth-child(2) > span {
+    color: var(--ink-soft);
+    font-size: 0.88rem;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+}
+
+.workflow-summary {
+    padding: 12px 14px;
+    border-left: 3px solid var(--olive);
+    background: rgba(143, 154, 98, 0.1);
+}
+
+@media (max-width: 640px) {
+    .workflow-choice-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .workflow-progress li {
+        flex-direction: column;
+        align-items: flex-start;
+        font-size: 0.75rem;
+    }
+
+    .source-radio-option {
+        grid-template-columns: 20px minmax(0, 1fr);
+    }
+
+    .source-radio-option .status-chip {
+        grid-column: 2;
+    }
 }
 
 .feature-list,

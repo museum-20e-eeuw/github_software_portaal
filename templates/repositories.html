@@ -25,6 +25,11 @@
                     <span>{{ repo.open_issues_count }} open items</span>
                     <span>Bijgewerkt: {{ repo.pushed_at|datetime_full }}</span>
                 </div>
+                <div class="local-project-path">
+                    <span class="eyebrow">Lokale directory</span>
+                    <code title="{{ repo.local_path }}">{{ repo.local_path }}</code>
+                    <span class="muted">{{ "Lokaal aanwezig" if repo.cloned else "Nog niet lokaal opgehaald" }}</span>
+                </div>
             </a>
         {% endfor %}
     </div>

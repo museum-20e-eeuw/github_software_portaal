@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="content-grid">
+    <article class="panel stack project-wizard">
+        <div class="panel-head">
+            <div>
+                <span class="eyebrow">Project starten</span>
+                <h2>Nieuw softwareproject</h2>
+            </div>
+            <a class="btn btn-ghost" href="{{ url_for('dashboard') }}">Annuleren</a>
+        </div>
+
+        <ol class="workflow-progress" aria-label="Voortgang">
+            <li class="{% if step == 'choice' %}current{% else %}complete{% endif %}"><span>1</span> Start</li>
+            <li class="{% if step in ['starter', 'source'] %}current{% elif step == 'details' %}complete{% endif %}"><span>2</span> Keuze</li>
+            <li class="{% if step == 'details' %}current{% endif %}"><span>3</span> Details</li>
+        </ol>
+
+        {% if step == "choice" %}
+            <div>
+                <span class="eyebrow">Stap 1</span>
+                <h3>Wat wil je starten?</h3>
+            </div>
+            <div class="workflow-choice-grid">
+                <form method="post" action="{{ url_for('app_new.choose_creation_mode') }}" class="workflow-choice">
+                    <span class="workflow-choice-mark" aria-hidden="true">+</span>
+                    <h3>Nieuw project</h3>
+                    <p>Begin met een schone Python- of Arduino-app.</p>
+                    <button class="btn btn-primary" type="submit" name="creation_mode" value="empty">Nieuw project kiezen</button>
+                </form>
+                <form method="post" action="{{ url_for('app_new.choose_creation_mode') }}" class="workflow-choice">
+                    <span class="workflow-choice-mark" aria-hidden="true">&#8635;</span>
+                    <h3>Kopie van bestaand</h3>
+                    <p>Neem de bestanden van een bestaand softwareproject over.</p>
+                    <button class="btn btn-ghost" type="submit" name="creation_mode" value="copy">Bestaand project kiezen</button>
+                </form>
+            </div>
+        {% elif step == "starter" %}
+            <div>
+                <span class="eyebrow">Stap 2</span>
+                <h3>Welk type project wil je maken?</h3>
+            </div>
+            <form method="post" action="{{ url_for('app_new.choose_starter_type') }}" class="stack">
+                <div class="workflow-radio-list">
+                    <label class="workflow-radio-option">
+                        <input type="radio" name="starter_type" value="python" {% if values.get('starter_type', 'python') == 'python' %}checked{% endif %} required />
+                        <span><strong>Python-app</strong><span>Een uitvoerbare app met een Hello World-startpunt.</span></span>
+                    </label>
+                    <label class="workflow-radio-option">
+                        <input type="radio" name="starter_type" value="arduino" {% if values.get('starter_type') == 'arduino' %}checked{% endif %} required />
+                        <span><strong>Arduino-project</strong><span>Een Arduino-sketch met een Hello World-bericht via Serial.</span></span>
+                    </label>
+                </div>
+                <div class="action-row">
+                    <a class="btn btn-ghost" href="{{ url_for('app_new.create_project') }}">Terug</a>
+                    <button class="btn btn-primary" type="submit">Verder</button>
+                </div>
+            </form>
+        {% elif step == "source" %}
+            <div>
+                <span class="eyebrow">Stap 2</span>
+                <h3>Welk project wil je kopieren?</h3>
+            </div>
+            {% if repositories %}
+                <form method="post" action="{{ url_for('app_new.choose_source_project') }}" class="stack">
+                    <div class="workflow-radio-list">
+                        {% for repo in repositories %}
+                            <label class="workflow-radio-option source-radio-option">
+                                <input type="radio" name="source_repo" value="{{ repo.name }}" {% if values.get('source_repo') == repo.name %}checked{% endif %} required />
+                                <span>
+                                    <strong>{{ repo.name }}</strong>
+                                    <span>{{ repo.description or "Geen beschrijving beschikbaar." }}</span>
+                                </span>
+                                <span class="status-chip">{{ repo.visibility }}</span>
+                            </label>
+                        {% endfor %}
+                    </div>
+                    <div class="action-row">
+                        <a class="btn btn-ghost" href="{{ url_for('app_new.create_project') }}">Terug</a>
+                        <button class="btn btn-primary" type="submit">Dit project kopieren</button>
+                    </div>
+                </form>
+            {% else %}
+                <p class="muted">Er zijn geen softwareprojecten beschikbaar om te kopieren.</p>
+                <a class="btn btn-ghost" href="{{ url_for('app_new.create_project') }}">Terug</a>
+            {% endif %}
+        {% else %}
+            <div>
+                <span class="eyebrow">Stap 3</span>
+                <h3>Geef je project de laatste gegevens</h3>
+            </div>
+            <div class="workflow-summary">
+                {% if values.get('creation_mode') == 'copy' %}
+                    <span>Kopie van <strong>{{ values.get('source_repo') }}</strong></span>
+                {% else %}
+                    <span>Nieuw <strong>{{ 'Python-project' if values.get('starter_type') == 'python' else 'Arduino-project' }}</strong></span>
+                {% endif %}
+            </div>
+            <form method="post" action="{{ url_for('app_new.create_project_from_form') }}" class="stack" id="new-project-details" data-workspace-root="{{ workspace_root }}">
+                <input type="hidden" name="creation_mode" value="{{ values.get('creation_mode', '') }}" />
+                <input type="hidden" name="starter_type" value="{{ values.get('starter_type', '') }}" />
+                <input type="hidden" name="source_repo" value="{{ values.get('source_repo', '') }}" />
+                <label>
+                    Nieuwe projectnaam
+                    <input type="text" name="name" id="new-project-name" value="{{ values.get('name', '') }}" maxlength="100" required autocomplete="off" placeholder="bijvoorbeeld SensorMonitor" />
+                </label>
+                <label>
+                    Beschrijving
+                    <input type="text" name="description" value="{{ values.get('description', '') }}" maxlength="350" placeholder="Korte omschrijving van het project" />
+                </label>
+                <label>
+                    GitHub-zichtbaarheid
+                    <select name="visibility">
+                        <option value="private" {% if values.get('visibility', 'private') == 'private' %}selected{% endif %}>Prive</option>
+                        <option value="public" {% if values.get('visibility') == 'public' %}selected{% endif %}>Openbaar</option>
+                    </select>
+                </label>
+                <p class="muted">Lokale map: <code id="new-project-path">{{ workspace_root }}\{{ values.get('name', 'projectnaam') }}</code></p>
+                <div class="action-row">
+                    {% if values.get('creation_mode') == 'copy' %}
+                        <a class="btn btn-ghost" href="{{ url_for('app_new.choose_source_project', source_repo=values.get('source_repo', '')) }}">Terug</a>
+                    {% else %}
+                        <a class="btn btn-ghost" href="{{ url_for('app_new.choose_starter_type', starter_type=values.get('starter_type', 'python')) }}">Terug</a>
+                    {% endif %}
+                    <button class="btn btn-primary" type="submit">Project maken en naar GitHub pushen</button>
+                </div>
+            </form>
+        {% endif %}
+    </article>
+</section>
+<script src="{{ url_for('static', filename='app_new.js') }}" defer></script>
+{% endblock %}

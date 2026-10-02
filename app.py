@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import threading
 import time
+import webbrowser
 from ctypes import wintypes
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -30,6 +31,8 @@ from flask import (
     request,
     url_for,
 )
+
+from app_new import create_blueprint
 
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -464,6 +467,18 @@ def local_repo_path(repo_name: str) -> str:
 
 def is_repo_cloned_locally(repo_name: str) -> bool:
     return os.path.isdir(os.path.join(local_repo_path(repo_name), ".git"))
+
+
+def add_local_project_paths(repositories: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    root = workspace_root()
+    return [
+        {
+            **repo,
+            "local_path": os.path.abspath(os.path.join(root, repo["name"])),
+            "cloned": os.path.isdir(os.path.join(root, repo["name"], ".git")),
+        }
+        for repo in repositories
+    ]
 
 
 def run_git(repo_name: str, args: list[str], timeout: int = 30) -> subprocess.CompletedProcess:
@@ -1019,7 +1034,7 @@ def dashboard():
     active_repo_names = {item["repo_name"] for item in active_work if item["repo_name"]}
     repos_with_work = [repo for repo in repos if repo["name"] in active_repo_names]
     other_repos = [repo for repo in repos if repo["name"] not in active_repo_names]
-    ordered_repos = repos_with_work + other_repos
+    ordered_repos = add_local_project_paths(repos_with_work + other_repos)
 
     return render_template(
         "dashboard.html",
@@ -1037,7 +1052,7 @@ def repositories():
     return render_template(
         "repositories.html",
         active_nav="repositories",
-        repositories=repos,
+        repositories=add_local_project_paths(repos),
     )
 
 
@@ -1368,6 +1383,19 @@ def cancel_workflow(repo_name: str, run_id: int):
     return api_success(f"Workflow run {run_id} is geannuleerd.")
 
 
+app.register_blueprint(
+    create_blueprint(
+        require_login=require_login,
+        get_org_repositories=get_org_repositories,
+        github_request=github_request,
+        current_org=current_org,
+        workspace_root=workspace_root,
+        github_api_error=GitHubApiError,
+    )
+)
+
+
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "5080"))
+    threading.Timer(1.0, webbrowser.open, args=(f"http://127.0.0.1:{port}/dashboard",)).start()
     app.run(host="127.0.0.1", port=port, debug=False)
