@@ -12,7 +12,8 @@
 
         <p class="muted">
             Hier bepaal je in welke map op deze computer softwareprojecten lokaal worden opgehaald
-            wanneer je op "Lokaal ophalen" klikt vanuit een project.
+            wanneer je op "Lokaal ophalen" klikt vanuit een project. De logbestanden worden in de
+            submap <code>logging</code> opgeslagen.
         </p>
 
         <form method="post" action="{{ url_for('settings_page') }}" class="stack" id="settings-form">
@@ -31,6 +32,19 @@
             <p class="muted">
                 Wanneer hier een token staat, log je automatisch in als {{ default_username }} en hoef je dit niet
                 telkens opnieuw te doen. Het token wordt lokaal in <code>config.json</code> bewaard op deze computer.
+            </p>
+
+            <label>
+                Logniveau
+                <select name="log_level" id="log-level-select">
+                    {% for level in ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] %}
+                    <option value="{{ level }}" {% if log_level == level %}selected{% endif %}>{{ level }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <p class="muted">
+                Dit niveau geldt voor de logbestanden van zowel de hoofdapp als de projectwizard.
+                DEBUG bevat de meeste details; CRITICAL alleen kritieke fouten.
             </p>
 
             <div class="action-row">

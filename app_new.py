@@ -1,6 +1,18 @@
+"""Projectaanmaak voor Museum GitHub Balie.
+
+Applicatie: Museum GitHub Balie
+Beschrijving: Begeleide aanmaak van softwareprojecten en starterbestanden.
+Onderdeel: Flask-blueprint voor nieuwe softwareprojecten
+Gemaakt door: Eric Greuter
+Project: museum-20e-eeuw/github_software_portaal
+Copyright (c) 2026 Museum van de 20ste Eeuw
+Techniek: Python, Flask en Git
+"""
+
 from __future__ import annotations
 
 import base64
+import logging
 import os
 import re
 import shutil
@@ -12,11 +24,19 @@ from urllib.parse import quote
 from flask import Blueprint, flash, g, redirect, render_template, request, url_for
 
 
+logger = logging.getLogger("museum_software_portaal.app_new")
+
+
 class ProjectCreationError(Exception):
+    """Fout bij het voorbereiden of vullen van een nieuw project."""
+
     pass
 
 
 def run_git(token: str, args: list[str], cwd: str, *, identity: str | None = None) -> None:
+    """Voer Git uit in de opgegeven map en vertaal fouten naar projectfouten."""
+    operation = args[0] if args else "onbekend"
+    logger.debug("Git-bewerking gestart: %s in %s", operation, cwd)
     command = ["git"]
     if token:
         credential = base64.b64encode(f"x-access-token:{token}".encode("utf-8")).decode("ascii")
@@ -27,13 +47,19 @@ def run_git(token: str, args: list[str], cwd: str, *, identity: str | None = Non
     try:
         result = subprocess.run(command, cwd=cwd, capture_output=True, text=True, timeout=180)
     except (OSError, subprocess.SubprocessError) as exc:
+        # De opdrachtregel kan GitHub-inloggegevens bevatten; log daarom geen exceptiontekst.
+        logger.error("Git kon niet worden gestart voor %s in %s (%s).", operation, cwd, type(exc).__name__)
         raise ProjectCreationError(f"Git kon niet worden gestart: {exc}") from exc
     if result.returncode != 0:
         details = result.stderr.strip() or result.stdout.strip()
+        logger.error("Git-bewerking %s is mislukt (exitcode %s) in %s.", operation, result.returncode, cwd)
         raise ProjectCreationError(details or "Een Git-opdracht is mislukt.")
+    logger.debug("Git-bewerking afgerond: %s in %s", operation, cwd)
 
 
 def create_starter_files(directory: str, name: str, starter_type: str) -> None:
+    """Maak een README en een minimaal Python- of Arduino-startbestand."""
+    logger.debug("Startbestanden maken voor type %s in %s.", starter_type, directory)
     readme = f"# {name}\n\nNieuw softwareproject aangemaakt via Software Portaal.\n"
     with open(os.path.join(directory, "README.md"), "w", encoding="utf-8", newline="\n") as handle:
         handle.write(readme)
@@ -66,10 +92,14 @@ def create_blueprint(
     current_org: Callable,
     workspace_root: Callable,
     github_api_error: type[Exception],
+    record_activity: Callable[[str, str], None],
 ) -> Blueprint:
+    """Maak routes voor de stapsgewijze aanmaak van softwareprojecten."""
     blueprint = Blueprint("app_new", __name__)
 
     def load_repositories() -> list[dict[str, Any]]:
+        """Haal de repositories op die als bronproject gekopieerd kunnen worden."""
+        logger.debug("Repositories ophalen voor projectwizard.")
         return get_org_repositories(g.auth.token)
 
     def render_workflow(
@@ -77,6 +107,7 @@ def create_blueprint(
         repositories: list[dict[str, Any]] | None = None,
         values: dict[str, str] | None = None,
     ):
+        """Toon de opgegeven stap met de huidige formuliergegevens."""
         return render_template(
             "app_new.html",
             active_nav="dashboard",
@@ -89,12 +120,15 @@ def create_blueprint(
     @blueprint.get("/projects/new")
     @require_login
     def create_project():
+        """Begin de projectwizard bij de keuze voor een startmethode."""
         return render_workflow("choice")
 
     @blueprint.post("/projects/new/choose")
     @require_login
     def choose_creation_mode():
+        """Stuur de gebruiker naar een leeg startproject of een bronproject."""
         creation_mode = request.form.get("creation_mode", "").strip()
+        logger.debug("Startmethode gekozen: %s", creation_mode or "geen")
         if creation_mode == "empty":
             return render_workflow("starter", values={"creation_mode": "empty"})
         if creation_mode == "copy":
@@ -110,6 +144,7 @@ def create_blueprint(
     @blueprint.route("/projects/new/starter", methods=["GET", "POST"])
     @require_login
     def choose_starter_type():
+        """Laat het starttype kiezen en ga daarna naar de projectgegevens."""
         if request.method == "GET":
             return render_workflow(
                 "starter",
@@ -120,6 +155,7 @@ def create_blueprint(
             )
         starter_type = request.form.get("starter_type", "").strip()
         if starter_type not in {"python", "arduino"}:
+            logger.warning("Ongeldig starttype ontvangen: %s", starter_type or "geen")
             flash("Kies Python of Arduino als startproject.", "error")
             return render_workflow("starter", values={"creation_mode": "empty"})
         return render_workflow(
@@ -130,6 +166,7 @@ def create_blueprint(
     @blueprint.route("/projects/new/source", methods=["GET", "POST"])
     @require_login
     def choose_source_project():
+        """Toon repositories en valideer welke als kopieerbron wordt gebruikt."""
         try:
             repositories = load_repositories()
         except github_api_error as exc:
@@ -143,6 +180,7 @@ def create_blueprint(
             )
         source_repo = request.form.get("source_repo", "").strip()
         if not any(repo.get("name") == source_repo for repo in repositories):
+            logger.warning("Ongeldig bronproject gekozen: %s", source_repo or "geen")
             flash("Kies een bestaand softwareproject uit de lijst.", "error")
             return render_workflow("source", repositories)
         return render_workflow(
@@ -153,6 +191,7 @@ def create_blueprint(
     @blueprint.post("/projects/new")
     @require_login
     def create_project_from_form():
+        """Valideer invoer en maak een lokale kopie plus GitHub-repository."""
         try:
             repositories = load_repositories()
         except github_api_error as exc:
@@ -170,24 +209,37 @@ def create_blueprint(
         name = values["name"]
         creation_mode = values["creation_mode"]
         starter_type = values["starter_type"]
+        logger.info(
+            "Projectaanmaak gestart voor %s (methode=%s, starttype=%s, zichtbaarheid=%s).",
+            name or "(naam ontbreekt)",
+            creation_mode,
+            starter_type,
+            values["visibility"],
+        )
         if not re.fullmatch(r"[A-Za-z0-9._-]{1,100}", name) or name in {".", ".."}:
+            logger.warning("Projectaanmaak afgewezen wegens ongeldige projectnaam.")
             flash("Gebruik een projectnaam van 1 tot 100 letters, cijfers, punten, streepjes of underscores.", "error")
             return render_workflow("details", values=values)
         if creation_mode not in {"empty", "copy"}:
+            logger.warning("Projectaanmaak afgewezen wegens ongeldige startmethode: %s", creation_mode)
             flash("Kies een geldige startmethode.", "error")
             return render_workflow("choice")
         if creation_mode == "empty" and starter_type not in {"python", "arduino"}:
+            logger.warning("Projectaanmaak afgewezen wegens ongeldig starttype: %s", starter_type)
             flash("Kies Python of Arduino als startproject.", "error")
             return render_workflow("starter", values=values)
         if values["visibility"] not in {"private", "public"}:
+            logger.warning("Projectaanmaak afgewezen wegens ongeldige zichtbaarheid.")
             flash("Kies een geldige zichtbaarheid voor de GitHub-repository.", "error")
             return render_workflow("details", values=values)
 
         source = next((repo for repo in repositories if repo.get("name") == values["source_repo"]), None)
         if creation_mode == "copy" and source is None:
+            logger.warning("Projectaanmaak afgewezen: bronproject %s staat niet in de lijst.", values["source_repo"])
             flash("Kies een bestaand softwareproject om te kopieren.", "error")
             return render_workflow("source", repositories)
         if creation_mode == "copy" and name.casefold() == values["source_repo"].casefold():
+            logger.warning("Projectaanmaak afgewezen: projectnaam is gelijk aan de bron.")
             flash("Geef de kopie een andere naam dan het bronproject.", "error")
             return render_workflow("details", values=values)
 
@@ -197,14 +249,18 @@ def create_blueprint(
             flash("De projectmap moet binnen de ingestelde werkmap staan.", "error")
             return render_workflow("details", values=values)
         if os.path.lexists(target):
+            logger.warning("Projectaanmaak afgewezen: doelmap bestaat al voor %s.", name)
             flash(f"De lokale map bestaat al: {target}", "error")
             return render_workflow("details", values=values)
 
+        # Bereid bestanden tijdelijk voor zodat een onvolledige kopie niet als project verschijnt.
         staging_root = tempfile.mkdtemp(prefix=".new-project-", dir=root)
         staging_project = os.path.join(staging_root, name)
         github_created = False
         local_project_ready = False
         try:
+            logger.debug("Tijdelijke projectmap klaarmaken voor %s.", name)
+            # Maak starterbestanden of kopieer de bron zonder de oude Git-geschiedenis.
             if creation_mode == "copy":
                 source_url = str(source.get("clone_url") or "")
                 if not source_url:
@@ -215,12 +271,14 @@ def create_blueprint(
                 os.makedirs(staging_project)
                 create_starter_files(staging_project, name, starter_type)
 
+            # Begin met een eigen geschiedenis voordat de nieuwe GitHub-repository wordt aangemaakt.
             run_git("", ["init", "--initial-branch=main"], cwd=staging_project)
             run_git("", ["add", "--force", "--all"], cwd=staging_project)
             initial_commit = "Initial Hello World project" if creation_mode == "empty" else f"Initial copy of {source['name']}"
             run_git("", ["commit", "-m", initial_commit], cwd=staging_project, identity=g.auth.username)
 
             organization = current_org()
+            # Maak de remote repository pas aan nadat de lokale eerste commit gereed is.
             created_repo = github_request(
                 g.auth.token,
                 "POST",
@@ -233,15 +291,40 @@ def create_blueprint(
                 },
             )
             github_created = True
+            logger.info("GitHub-repository aangemaakt voor project %s.", name)
             os.rename(staging_project, target)
             local_project_ready = True
             remote_url = str(created_repo.get("clone_url") or f"https://github.com/{organization}/{name}.git")
             run_git(g.auth.token, ["remote", "add", "origin", remote_url], cwd=target)
             run_git(g.auth.token, ["push", "--set-upstream", "origin", "HEAD:main"], cwd=target)
+            logger.info("Eerste commit naar GitHub gepusht voor project %s.", name)
+            release_note = ""
+            try:
+                github_request(
+                    g.auth.token,
+                    "POST",
+                    f"/repos/{quote(organization, safe='')}/{quote(name, safe='')}/releases",
+                    payload={
+                        "tag_name": "v0.1.0",
+                        "target_commitish": "main",
+                        "name": "v0.1.0",
+                        "body": initial_commit,
+                    },
+                )
+                release_note = " Release v0.1.0 is aangemaakt."
+            except github_api_error as exc:
+                logger.warning(
+                    "Release v0.1.0 voor %s kon niet worden aangemaakt (%s).",
+                    name,
+                    type(exc).__name__,
+                )
+                release_note = f" Release kon niet worden aangemaakt: {exc}"
         except github_api_error as exc:
+            logger.error("GitHub-fout bij projectaanmaak voor %s (%s).", name, type(exc).__name__)
             flash(f"GitHub kon de repository niet aanmaken: {exc}", "error")
             return render_workflow("details", values=values)
         except ProjectCreationError as exc:
+            logger.error("Git-fout bij projectaanmaak voor %s.", name)
             if github_created and local_project_ready:
                 flash(
                     f"GitHub-repository {name} is aangemaakt, maar pushen is mislukt. "
@@ -254,15 +337,20 @@ def create_blueprint(
                 flash(f"Project is niet volledig aangemaakt: {exc}", "error")
             return render_workflow("details", values=values)
         except OSError as exc:
+            logger.exception("Bestandsfout bij projectaanmaak voor %s.", name)
             if github_created:
                 flash(f"GitHub-repository {name} is aangemaakt, maar de lokale projectmap kon niet worden klaargezet: {exc}", "error")
             else:
                 flash(f"De lokale projectmap kon niet worden klaargezet: {exc}", "error")
             return render_workflow("details", values=values)
         finally:
+            # Ruim de tijdelijke werkmap ook op bij fouten tijdens Git- of API-acties.
             shutil.rmtree(staging_root, ignore_errors=True)
 
-        flash(f"Project {name} is lokaal aangemaakt en geregistreerd op GitHub.", "success")
+        flash(f"Project {name} is lokaal aangemaakt en geregistreerd op GitHub.{release_note}", "success")
+        source_detail = f"{name} (kopie van {values['source_repo']})" if creation_mode == "copy" else name
+        record_activity("Nieuw softwareproject aangemaakt", source_detail)
+        logger.info("Projectaanmaak voltooid voor %s.", name)
         return redirect(url_for("dashboard"))
 
     return blueprint

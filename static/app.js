@@ -190,6 +190,58 @@ function bindProjectDetail() {
         }
     });
 
+    let deleteKeystrokes = 0;
+    const deleteBackdrop = document.getElementById("delete-modal-backdrop");
+    const deleteInput = document.getElementById("delete-confirm-input");
+    const deleteConfirmBtn = document.getElementById("delete-confirm-btn");
+
+    function syncDeleteButton() {
+        deleteConfirmBtn.disabled = deleteInput.value !== repoName || deleteKeystrokes < repoName.length;
+    }
+
+    document.getElementById("delete-project-btn")?.addEventListener("click", () => {
+        deleteInput.value = "";
+        deleteKeystrokes = 0;
+        syncDeleteButton();
+        deleteBackdrop.hidden = false;
+        deleteInput.focus();
+    });
+    document.getElementById("delete-cancel-btn")?.addEventListener("click", () => {
+        deleteBackdrop.hidden = true;
+    });
+    ["paste", "drop", "cut", "copy", "contextmenu"].forEach((name) => {
+        deleteInput?.addEventListener(name, (event) => event.preventDefault());
+    });
+    deleteInput?.addEventListener("keydown", (event) => {
+        if ((event.ctrlKey || event.metaKey) && ["v", "x", "c", "Insert"].includes(event.key)) {
+            event.preventDefault();
+        } else if (event.shiftKey && event.key === "Insert") {
+            event.preventDefault();
+        } else if (event.key.length === 1 && !event.ctrlKey && !event.metaKey) {
+            deleteKeystrokes += 1;
+        }
+    });
+    deleteInput?.addEventListener("beforeinput", (event) => {
+        if (event.inputType && /paste|drop/i.test(event.inputType)) {
+            event.preventDefault();
+        }
+    });
+    deleteInput?.addEventListener("input", syncDeleteButton);
+    deleteConfirmBtn?.addEventListener("click", async () => {
+        deleteConfirmBtn.disabled = true;
+        try {
+            const payload = await postJson(`/api/projects/${encodeURIComponent(repoName)}/delete`, {
+                confirm_name: deleteInput.value,
+                keystrokes: deleteKeystrokes,
+            });
+            showToast(payload.message, false);
+            window.setTimeout(() => { window.location.href = payload.redirect || "/dashboard"; }, 1200);
+        } catch (error) {
+            showToast(error.message, true);
+            syncDeleteButton();
+        }
+    });
+
     let pendingSessionId = null;
 
     async function pollOpenFileSession(sessionId) {

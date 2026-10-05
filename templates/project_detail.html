@@ -94,6 +94,35 @@
 </section>
 {% endif %}
 
+<section class="panel stack danger-zone">
+    <div class="panel-head">
+        <div>
+            <span class="eyebrow">Gevaarlijke zone</span>
+            <h2>Repository verwijderen</h2>
+        </div>
+    </div>
+    <p class="muted">
+        Hiermee wordt <strong>{{ repo.name }}</strong> definitief van GitHub verwijderd, inclusief issues en
+        pull requests. Dit kan niet ongedaan worden gemaakt. Een lokale kopie blijft staan.
+    </p>
+    <div><button class="btn btn-danger" type="button" id="delete-project-btn">Repository verwijderen</button></div>
+</section>
+
+<div class="modal-backdrop" id="delete-modal-backdrop" hidden>
+    <div class="panel modal-panel stack">
+        <div class="panel-head">
+            <h2>Weet je het zeker?</h2>
+        </div>
+        <p>Typ de naam <strong class="no-select">{{ repo.name }}</strong> over om te bevestigen. Plakken is niet mogelijk.</p>
+        <input type="text" id="delete-confirm-input" autocomplete="off" autocapitalize="off"
+               spellcheck="false" aria-label="Typ de repositorynaam" />
+        <div class="action-row">
+            <button class="btn btn-ghost" type="button" id="delete-cancel-btn">Annuleren</button>
+            <button class="btn btn-danger" type="button" id="delete-confirm-btn" disabled>Definitief verwijderen</button>
+        </div>
+    </div>
+</div>
+
 <div class="modal-backdrop" id="commit-modal-backdrop" hidden>
     <div class="panel modal-panel stack">
         <div class="panel-head">

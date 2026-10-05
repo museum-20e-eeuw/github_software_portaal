@@ -25,6 +25,10 @@
                     <span>{{ repo.open_issues_count }} open items</span>
                     <span>Bijgewerkt: {{ repo.pushed_at|datetime_full }}</span>
                 </div>
+                <div class="meta-row">
+                    <span>Versie: {{ repo.version or "-" }}</span>
+                    <span>Laatste wijziging: {{ repo.last_commit_author or "-" }} · {{ repo.last_commit_at|datetime_full }}</span>
+                </div>
                 <div class="local-project-path">
                     <span class="eyebrow">Lokale directory</span>
                     <code title="{{ repo.local_path }}">{{ repo.local_path }}</code>

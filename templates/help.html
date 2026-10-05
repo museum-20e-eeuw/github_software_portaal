@@ -1,35 +1,89 @@
 {% extends "base.html" %}
 
 {% block content %}
-<section class="content-grid">
+<section class="panel stack">
+    <div class="panel-head">
+        <div>
+            <span class="eyebrow">Hulp bij het softwareportaal</span>
+            <h2>Projecten beheren, stap voor stap</h2>
+        </div>
+        <a class="btn btn-ghost" href="{{ url_for('dashboard') }}">Naar projecten</a>
+    </div>
+    <p class="muted">
+        Dit portaal helpt je softwareprojecten op GitHub te bekijken, lokaal te openen en te delen.
+        Je hoeft Git of de technische details niet te kennen: volg de knoppen en stappen op het scherm.
+    </p>
+</section>
+
+<section class="content-grid help-content">
     <article class="panel stack">
         <div class="panel-head">
             <div>
-                <span class="eyebrow">Hulp</span>
-                <h2>Zo gebruik je de app</h2>
+                <span class="eyebrow">Bestaand project</span>
+                <h2>Verder werken aan software</h2>
             </div>
         </div>
-
         <ol class="help-list">
-            <li>Log in met het GitHub-account <strong>{{ default_username }}</strong>.</li>
-            <li>Plak een personal access token met repo-, org- en workflow-rechten.</li>
-            <li>Kies bovenin een hoofdmenu-item.</li>
-            <li>Gebruik in een softwareproject het submenu voor detailacties.</li>
+            <li>Kies op het startscherm het project waaraan je wilt werken.</li>
+            <li>Klik op <strong>Lokaal ophalen</strong> als het project nog niet op deze computer staat.</li>
+            <li>Kies een bestand en open het in het programma dat erbij past.</li>
+            <li>Pas het bestand aan, sla het op en sluit het. Het portaal laat daarna zien wanneer er iets is gewijzigd.</li>
+            <li>Vul in het venster dat verschijnt je naam, versienummer en een korte uitleg in. Klik daarna op <strong>Bevestigen en pushen</strong> om je wijzigingen naar GitHub te sturen.</li>
         </ol>
+        <p class="muted">
+            GitHub is de online plek waar de projectbestanden worden bewaard. Met bijwerken haal je
+            nieuwere bestanden van GitHub naar deze computer; met pushen stuur je jouw opgeslagen
+            wijzigingen terug naar GitHub.
+        </p>
     </article>
 
     <article class="panel stack">
         <div class="panel-head">
             <div>
-                <span class="eyebrow">Belangrijk</span>
-                <h2>Waarom via de GitHub API?</h2>
+                <span class="eyebrow">Nieuw project</span>
+                <h2>Een project starten</h2>
             </div>
         </div>
+        <ol class="help-list">
+            <li>Klik op <strong>Nieuw softwareproject</strong>.</li>
+            <li>Kies een leeg Python- of Arduino-project, of maak een kopie van een bestaand project.</li>
+            <li>Geef het project een naam en eventueel een beschrijving.</li>
+            <li>Kies of het project alleen voor het team bedoeld is (<strong>Privé</strong>) of voor iedereen zichtbaar mag zijn (<strong>Openbaar</strong>).</li>
+            <li>Klik op <strong>Project maken en naar GitHub pushen</strong>. Het portaal maakt het project op deze computer én op GitHub aan.</li>
+        </ol>
+        <p class="muted">
+            Een kopie begint als een zelfstandig project: wijzigingen aan de kopie veranderen het
+            oorspronkelijke project niet.
+        </p>
+    </article>
 
+    <article class="panel stack">
+        <div class="panel-head">
+            <div>
+                <span class="eyebrow">Andere onderdelen</span>
+                <h2>Wat vind je waar?</h2>
+            </div>
+        </div>
         <ul class="feature-list">
-            <li>Alle gegevens worden rechtstreeks via GitHub API opgehaald.</li>
-            <li>Acties zoals issue aanmaken, sluiten, workflow rerunnen en PR mergen lopen ook via API-calls.</li>
-            <li>Het token wordt alleen in het geheugen van deze lokale sessie bewaard en niet naar schijf geschreven.</li>
+            <li><strong>Repositories:</strong> alle softwareprojecten in het overzicht.</li>
+            <li><strong>Issues:</strong> vragen, fouten of klusjes die bij een project horen.</li>
+            <li><strong>Pull requests:</strong> voorgestelde wijzigingen die iemand eerst kan bekijken voordat ze worden samengevoegd.</li>
+            <li><strong>Workflows:</strong> automatische controles of taken die bij een project horen. Als er iets misgaat, kun je de melding bekijken of de taak opnieuw starten.</li>
+        </ul>
+    </article>
+
+    <article class="panel stack">
+        <div class="panel-head">
+            <div>
+                <span class="eyebrow">Instellingen en aanmelden</span>
+                <h2>Wat moet ik weten?</h2>
+            </div>
+        </div>
+        <ul class="feature-list">
+            <li>Bij <strong>Instellingen</strong> staat de map op deze computer waarin projecten worden bewaard. Je kunt de standaardmap meestal gewoon laten staan.</li>
+            <li>Voor toegang tot GitHub gebruikt het portaal een persoonlijk toegangstoken. Dat token wordt lokaal op deze computer in <code>config.json</code> bewaard. Deel het token met niemand.</li>
+            <li>Het logniveau bepaalt hoeveel technische informatie wordt bijgehouden. Laat dit op de standaardinstelling staan, tenzij een beheerder je iets anders vraagt.</li>
+            <li>De knop <strong>Hulp</strong> bovenaan deze pagina brengt je altijd terug naar deze uitleg.</li>
         </ul>
     </article>
 </section>

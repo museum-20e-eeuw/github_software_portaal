@@ -5,7 +5,7 @@
     <div class="panel-head">
         <div>
             <span class="eyebrow">Inloggen</span>
-            <h2>GitHub toegang voor {{ default_username }}</h2>
+            <h2>GitHub toegang{% if default_username %} voor {{ default_username }}{% endif %}</h2>
         </div>
     </div>
 
@@ -15,7 +15,7 @@
 
             <label>
                 Login naam
-                <input type="text" name="username" value="{{ default_username }}" readonly />
+                <input type="text" name="username" value="{{ default_username }}" required autocomplete="username" />
             </label>
 
             <label>
@@ -25,7 +25,8 @@
 
             <p class="muted">
                 Gebruik een token met minimaal <strong>repo</strong>, <strong>read:org</strong> en
-                <strong>workflow</strong> rechten.
+                <strong>workflow</strong> rechten. Username en token worden na inloggen in
+                <code>config.json</code> bewaard.
             </p>
 
             <div class="action-row">

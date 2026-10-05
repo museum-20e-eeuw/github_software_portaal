@@ -1,31 +1,7 @@
 {% extends "base.html" %}
 
 {% block content %}
-<section class="card-grid stats-grid">
-    <article class="stat-card">
-        <span class="eyebrow">Softwareprojecten</span>
-        <strong>{{ repo_count }}</strong>
-        <span class="muted">Beschikbare softwareprojecten</span>
-    </article>
-    <article class="stat-card">
-        <span class="eyebrow">Wie werkt waaraan</span>
-        {% if active_work %}
-            <ul class="active-work-list">
-                {% for item in active_work %}
-                    <li>
-                        <a href="{{ item.url }}" target="_blank" rel="noopener">
-                            <strong>{{ item.user }}</strong> werkt aan
-                            <strong>{{ item.repo_name }}</strong>
-                            <span class="muted">— {{ item.title }}</span>
-                        </a>
-                    </li>
-                {% endfor %}
-            </ul>
-        {% else %}
-            <span class="muted">Op dit moment werkt niemand aan een softwareproject.</span>
-        {% endif %}
-    </article>
-</section>
+
 
 <section class="content-grid dashboard-content">
     <article class="panel">
@@ -48,6 +24,10 @@
                     <div class="meta-row">
                         <span>{{ repo.language or "Onbekend" }}</span>
                         <span>{{ repo.open_issues_count }} open items</span>
+                    </div>
+                    <div class="meta-row">
+                        <span>Versie: {{ repo.version or "-" }}</span>
+                        <span>{{ repo.last_commit_author or "-" }} · {{ repo.last_commit_at|datetime_full }}</span>
                     </div>
                     <div class="local-project-path">
                         <span class="eyebrow">Lokale directory</span>

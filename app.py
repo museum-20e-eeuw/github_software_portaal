@@ -1,7 +1,20 @@
+"""Museum GitHub Balie: Flask-webapp voor GitHub-beheer door museummedewerkers.
+
+Applicatie: Museum GitHub Balie
+Beschrijving: Beheer repositories, pull requests, issues en workflows voor
+    Museum van de 20ste Eeuw.
+Onderdeel: Hoofdapplicatie en GitHub API-koppeling
+Gemaakt door: Eric Greuter
+Project: museum-20e-eeuw/github_software_portaal
+Copyright (c) 2026 Museum van de 20ste Eeuw
+Techniek: Python, Flask en GitHub REST API
+"""
+
 from __future__ import annotations
 
 import ctypes
 import json
+import logging
 import os
 import re
 import secrets
@@ -11,9 +24,11 @@ import threading
 import time
 import webbrowser
 from ctypes import wintypes
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import wraps
+from logging.handlers import RotatingFileHandler
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode
@@ -29,6 +44,7 @@ from flask import (
     redirect,
     render_template,
     request,
+    session as flask_session,
     url_for,
 )
 
@@ -41,14 +57,23 @@ SESSION_COOKIE_NAME = "museum_github_sid"
 GITHUB_API_BASE = "https://api.github.com"
 
 
+# ---------------------------------------------------------------------------
+# Configuratie en aanmeldgegevens
+# ---------------------------------------------------------------------------
+
+
 @dataclass
 class AuthSession:
+    """Bewaar de GitHub-aanmeldgegevens die bij een tijdelijke sessie horen."""
+
     username: str
     token: str
     created_at: datetime
 
 
 class GitHubApiError(Exception):
+    """GitHub-fout met de HTTP-statuscode voor de juiste afhandeling."""
+
     def __init__(self, status_code: int, message: str):
         super().__init__(message)
         self.status_code = status_code
@@ -56,19 +81,120 @@ class GitHubApiError(Exception):
 
 
 def load_app_config() -> dict[str, Any]:
+    """Lees de lokale instellingen uit config.json."""
     with open(CONFIG_PATH, "r", encoding="utf-8") as handle:
         return json.load(handle)
 
 
 def save_app_config(updates: dict[str, Any]) -> None:
+    """Werk instellingen bij en sla de volledige configuratie op."""
     APP_CONFIG.update(updates)
     with open(CONFIG_PATH, "w", encoding="utf-8") as handle:
         json.dump(APP_CONFIG, handle, ensure_ascii=False, indent=2)
         handle.write("\n")
+    logger.info("Configuratie bijgewerkt; velden: %s", sorted(set(updates) - {"personal_access_token"}))
 
 
 APP_CONFIG = load_app_config()
+LOG_LEVELS = {
+    "DEBUG": logging.DEBUG,
+    "INFO": logging.INFO,
+    "WARNING": logging.WARNING,
+    "ERROR": logging.ERROR,
+    "CRITICAL": logging.CRITICAL,
+}
+
+
+def configure_app_logging() -> None:
+    """Schrijf gescheiden, roterende logbestanden in de ingestelde werkmap."""
+    configured_level = str(APP_CONFIG.get("log_level") or "DEBUG").upper()
+    log_level = LOG_LEVELS.get(configured_level, logging.DEBUG)
+    log_directory = os.path.join(
+        str(APP_CONFIG.get("workspace_root") or os.path.join(APP_DIR, "workspace")),
+        "logging",
+    )
+    os.makedirs(log_directory, exist_ok=True)
+    formatter = logging.Formatter(
+        "%(asctime)s %(levelname)s [%(name)s] %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    for logger_name, filename in (
+        ("museum_software_portaal.app", "app.log"),
+        ("museum_software_portaal.app_new", "app_new.log"),
+    ):
+        module_logger = logging.getLogger(logger_name)
+        module_logger.setLevel(log_level)
+        module_logger.propagate = False
+        log_path = os.path.abspath(os.path.join(log_directory, filename))
+        for existing_handler in list(module_logger.handlers):
+            if (
+                isinstance(existing_handler, RotatingFileHandler)
+                and os.path.abspath(existing_handler.baseFilename) != log_path
+            ):
+                module_logger.removeHandler(existing_handler)
+                existing_handler.close()
+        if not any(
+            isinstance(handler, RotatingFileHandler)
+            and os.path.abspath(handler.baseFilename) == log_path
+            for handler in module_logger.handlers
+        ):
+            handler = RotatingFileHandler(
+                log_path,
+                maxBytes=5 * 1024 * 1024,
+                backupCount=5,
+                encoding="utf-8",
+            )
+            handler.setFormatter(formatter)
+            module_logger.addHandler(handler)
+        for handler in module_logger.handlers:
+            if isinstance(handler, RotatingFileHandler):
+                handler.setLevel(log_level)
+
+
+configure_app_logging()
+logger = logging.getLogger("museum_software_portaal.app")
+logger.info(
+    "Logging gestart op niveau %s; logmap: %s",
+    str(APP_CONFIG.get("log_level") or "DEBUG").upper(),
+    os.path.join(str(APP_CONFIG.get("workspace_root") or os.path.join(APP_DIR, "workspace")), "logging"),
+)
+
 SESSION_STORE: dict[str, AuthSession] = {}
+USER_ACTIVITY: dict[str, list[dict[str, str]]] = {}
+USER_ACTIVITY_LIMIT = 50
+
+
+def _activity_session_id() -> str | None:
+    """Zoek de sessie waaraan een gebruikersactie gekoppeld moet worden."""
+    session_id = flask_session.get("activity_session_id")
+    if not session_id:
+        session_id = secrets.token_urlsafe(18)
+        flask_session["activity_session_id"] = session_id
+    return str(session_id)
+
+
+def record_user_activity(action: str, detail: str) -> None:
+    """Bewaar een actie tijdelijk voor de huidige browsersessie."""
+    session_id = _activity_session_id()
+    events = USER_ACTIVITY.setdefault(session_id, [])
+    events.insert(
+        0,
+        {
+            "action": action,
+            "detail": detail,
+            "username": g.auth.username if g.auth else str(APP_CONFIG.get("default_username") or "Lokale gebruiker"),
+            "timestamp": datetime.now().astimezone().isoformat(timespec="seconds"),
+        },
+    )
+    del events[USER_ACTIVITY_LIMIT:]
+
+
+def get_user_activity() -> list[dict[str, str]]:
+    """Geef de recente acties van de huidige aanmeldsessie terug."""
+    session_id = _activity_session_id()
+    username = g.auth.username if g.auth else str(APP_CONFIG.get("default_username") or "Lokale gebruiker")
+    return [event for event in USER_ACTIVITY.get(session_id, []) if event["username"] == username]
+
 
 app = Flask(
     __name__,
@@ -79,13 +205,20 @@ app.config["TEMPLATES_AUTO_RELOAD"] = True
 app.secret_key = os.getenv("MUSEUM_GITHUB_APP_SECRET", secrets.token_hex(32))
 
 
+# ---------------------------------------------------------------------------
+# Datumweergave voor pagina's en lijsten
+# ---------------------------------------------------------------------------
+
+
 def parse_github_datetime(value: str | None) -> datetime | None:
+    """Zet een GitHub-datum om naar een Python-datetime."""
     if not value:
         return None
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
 def format_full_datetime(value: str | None) -> str:
+    """Maak van een GitHub-datum een volledige datum- en tijdweergave."""
     parsed = parse_github_datetime(value)
     if parsed is None:
         return "-"
@@ -93,6 +226,7 @@ def format_full_datetime(value: str | None) -> str:
 
 
 def format_relative_datetime(value: str | None) -> str:
+    """Toon hoe lang geleden een activiteit heeft plaatsgevonden."""
     parsed = parse_github_datetime(value)
     if parsed is None:
         return "-"
@@ -137,7 +271,7 @@ def parse_version_tuple(value: str | None) -> tuple[int, ...] | None:
 
 
 def compare_versions(local: str | None, latest: str | None) -> str:
-    """Returns 'ok', 'outdated' or 'unknown'."""
+    """Vergelijk versies en geef 'ok', 'outdated' of 'unknown' terug."""
     local_tuple = parse_version_tuple(local)
     latest_tuple = parse_version_tuple(latest)
     if local_tuple is None or latest_tuple is None:
@@ -160,8 +294,11 @@ def fetch_latest_github_release(repo: str) -> str | None:
     try:
         with urlopen(req, timeout=10) as response:
             payload = json.loads(response.read().decode("utf-8"))
-            return str(payload.get("tag_name") or payload.get("name") or "")
-    except (HTTPError, URLError, TimeoutError, Exception):
+            version = str(payload.get("tag_name") or payload.get("name") or "")
+            logger.debug("Laatste release opgehaald voor %s: %s", repo, version or "geen versietag")
+            return version
+    except (HTTPError, URLError, TimeoutError, Exception) as exc:
+        logger.warning("Laatste release voor %s kon niet worden opgehaald: %s", repo, exc)
         return None
 
 
@@ -316,6 +453,7 @@ def build_system_check(name: str, local_version: str | None, latest_version: str
 
 
 def run_system_checks() -> list[dict[str, Any]]:
+    logger.info("Systeemcontrole gestart.")
     git_local = detect_git_version()
     vscode_local = detect_vscode_version()
     arduino_local = detect_arduino_ide_version()
@@ -324,17 +462,20 @@ def run_system_checks() -> list[dict[str, Any]]:
     vscode_latest = fetch_latest_github_release("microsoft/vscode")
     arduino_latest = fetch_latest_github_release("arduino/arduino-ide")
 
-    return [
+    results = [
         build_system_check("Git", git_local, git_latest),
         build_system_check("Visual Studio Code", vscode_local, vscode_latest),
         build_system_check("Arduino IDE", arduino_local, arduino_latest),
     ]
+    logger.info("Systeemcontrole afgerond voor %s hulpmiddelen.", len(results))
+    return results
 
 
 def get_system_check_results() -> list[dict[str, Any]]:
     with SYSTEM_CHECK_LOCK:
         now = time.time()
         if now - SYSTEM_CHECK_CACHE["checked_at"] < SYSTEM_CHECK_CACHE_SECONDS and SYSTEM_CHECK_CACHE["results"]:
+            logger.debug("Systeemcontrole uit cache teruggegeven.")
             return SYSTEM_CHECK_CACHE["results"]
 
     results = run_system_checks()
@@ -343,6 +484,11 @@ def get_system_check_results() -> list[dict[str, Any]]:
         SYSTEM_CHECK_CACHE["checked_at"] = time.time()
         SYSTEM_CHECK_CACHE["results"] = results
     return results
+
+
+# ---------------------------------------------------------------------------
+# Navigatie en communicatie met de GitHub API
+# ---------------------------------------------------------------------------
 
 
 def get_nav_items() -> list[dict[str, str]]:
@@ -370,6 +516,7 @@ def build_submenu(active: str, repo_name: str) -> list[dict[str, str]]:
 
 
 def extract_error_message(raw_body: str) -> str:
+    """Haal een leesbare foutmelding uit de API-respons van GitHub."""
     if not raw_body:
         return "Onbekende fout vanuit GitHub."
     try:
@@ -396,6 +543,8 @@ def github_request(
     params: dict[str, Any] | None = None,
     payload: dict[str, Any] | None = None,
 ) -> Any:
+    """Voer een geauthenticeerd GitHub API-verzoek uit."""
+    logger.debug("GitHub API-verzoek gestart: %s %s", method, path)
     query = f"?{urlencode(params, doseq=True)}" if params else ""
     url = f"{GITHUB_API_BASE}{path}{query}"
     body = json.dumps(payload).encode("utf-8") if payload is not None else None
@@ -412,20 +561,26 @@ def github_request(
     try:
         with urlopen(req, timeout=30) as response:
             response_body = response.read()
+            logger.debug("GitHub API-verzoek geslaagd: %s %s (HTTP %s)", method, path, response.status)
             if response.status in (204, 205) or not response_body:
                 return None
             return json.loads(response_body.decode("utf-8"))
     except HTTPError as exc:
         raw_body = exc.read().decode("utf-8", errors="replace")
-        raise GitHubApiError(exc.code, extract_error_message(raw_body)) from exc
+        message = extract_error_message(raw_body)
+        logger.warning("GitHub API-verzoek mislukt: %s %s (HTTP %s).", method, path, exc.code)
+        raise GitHubApiError(exc.code, message) from exc
     except URLError as exc:
+        logger.error("GitHub API niet bereikbaar voor %s %s: %s", method, path, exc.reason)
         raise GitHubApiError(503, f"GitHub is niet bereikbaar: {exc.reason}") from exc
 
 
 def require_login(view_func):
+    """Bescherm een route en stuur niet-aangemelde bezoekers naar de login."""
     @wraps(view_func)
     def wrapped(*args, **kwargs):
         if g.auth is None:
+            logger.warning("Toegang geweigerd voor niet-aangemelde aanvraag: %s %s", request.method, request.path)
             flash("Log eerst in om GitHub-gegevens op te halen.", "error")
             return redirect(url_for("login", next=request.path))
         return view_func(*args, **kwargs)
@@ -450,12 +605,14 @@ def preview_limit() -> int:
 
 
 def repo_path(repo_name: str, suffix: str = "") -> str:
+    """Bouw een URL-pad voor een repository binnen de ingestelde organisatie."""
     encoded_org = quote(current_org(), safe="")
     encoded_repo = quote(repo_name, safe="")
     return f"/repos/{encoded_org}/{encoded_repo}{suffix}"
 
 
 def workspace_root() -> str:
+    """Geef de lokale werkmap terug en maak die zo nodig aan."""
     root = str(APP_CONFIG.get("workspace_root") or os.path.join(APP_DIR, "workspace"))
     os.makedirs(root, exist_ok=True)
     return root
@@ -470,6 +627,7 @@ def is_repo_cloned_locally(repo_name: str) -> bool:
 
 
 def add_local_project_paths(repositories: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Vul repositorygegevens aan met het lokale pad en de kloonstatus."""
     root = workspace_root()
     return [
         {
@@ -481,14 +639,87 @@ def add_local_project_paths(repositories: list[dict[str, Any]]) -> list[dict[str
     ]
 
 
+REPO_ACTIVITY_CACHE: dict[tuple[str, str], dict[str, Any]] = {}
+
+
+# ---------------------------------------------------------------------------
+# Lokale projectmappen en Git-bewerkingen
+# ---------------------------------------------------------------------------
+
+
+def fetch_repo_activity(token: str, repo: dict[str, Any]) -> dict[str, Any]:
+    """Laatste commit (wie/wanneer) en versie (laatste release, anders laatste tag)."""
+    name = repo["name"]
+    cache_key = (name, str(repo.get("pushed_at") or ""))
+    cached = REPO_ACTIVITY_CACHE.get(cache_key)
+    if cached is not None:
+        logger.debug("Repositoryactiviteit uit cache: %s", name)
+        return cached
+
+    activity: dict[str, Any] = {"last_commit_author": None, "last_commit_at": None, "version": None}
+    try:
+        commits = github_request(token, "GET", repo_path(name, "/commits"), params={"per_page": 1})
+        if commits:
+            commit = commits[0]
+            activity["sha"] = str(commit.get("sha", ""))[:7]
+            info = commit.get("commit", {})
+            activity["last_commit_author"] = (
+                (commit.get("author") or {}).get("login") or info.get("author", {}).get("name")
+            )
+            activity["last_commit_at"] = info.get("author", {}).get("date")
+    except GitHubApiError as exc:
+        logger.debug("Laatste commit voor %s niet beschikbaar: %s", name, exc.message)
+
+    try:
+        release = github_request(token, "GET", repo_path(name, "/releases/latest"))
+        if release:
+            activity["version"] = release.get("tag_name") or release.get("name")
+    except GitHubApiError as exc:
+        logger.debug("Release voor %s niet beschikbaar: %s", name, exc.message)
+    if not activity["version"]:
+        try:
+            tags = github_request(token, "GET", repo_path(name, "/tags"), params={"per_page": 1})
+            if tags:
+                activity["version"] = tags[0].get("name")
+        except GitHubApiError as exc:
+            logger.debug("Tags voor %s niet beschikbaar: %s", name, exc.message)
+
+    if not activity["version"] and activity.get("sha"):
+        activity["version"] = f"commit {activity['sha']}"
+
+    REPO_ACTIVITY_CACHE[cache_key] = activity
+    logger.debug("Repositoryactiviteit opgehaald: %s", name)
+    return activity
+
+
+def add_repo_activity(token: str, repositories: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if not repositories:
+        return repositories
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        activities = list(pool.map(lambda repo: fetch_repo_activity(token, repo), repositories))
+    return [{**repo, **activity} for repo, activity in zip(repositories, activities)]
+
+
 def run_git(repo_name: str, args: list[str], timeout: int = 30) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        ["git", *args],
-        cwd=local_repo_path(repo_name),
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-    )
+    """Voer een Git-opdracht uit vanuit de lokale map van een project."""
+    command = ["git", *args]
+    logger.debug("Git-opdracht gestart voor %s: %s", repo_name, args[0] if args else "onbekend")
+    try:
+        result = subprocess.run(
+            command,
+            cwd=local_repo_path(repo_name),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except (OSError, subprocess.SubprocessError):
+        logger.exception("Git-opdracht kon niet worden uitgevoerd voor %s.", repo_name)
+        raise
+    if result.returncode:
+        logger.warning("Git-opdracht mislukt voor %s (exitcode %s).", repo_name, result.returncode)
+    else:
+        logger.debug("Git-opdracht afgerond voor %s.", repo_name)
+    return result
 
 
 def get_local_git_status(repo_name: str) -> dict[str, Any]:
@@ -506,8 +737,8 @@ def get_local_git_status(repo_name: str) -> dict[str, Any]:
 
     try:
         run_git(repo_name, ["fetch", "--quiet", "origin"], timeout=30)
-    except (OSError, subprocess.SubprocessError):
-        pass
+    except (OSError, subprocess.SubprocessError) as exc:
+        logger.warning("Remote status ophalen mislukt voor %s (%s).", repo_name, type(exc).__name__)
 
     branch_result = run_git(repo_name, ["rev-parse", "--abbrev-ref", "HEAD"])
     local_branch = branch_result.stdout.strip() if branch_result.returncode == 0 else None
@@ -545,9 +776,12 @@ def get_local_git_status(repo_name: str) -> dict[str, Any]:
 
 
 def clone_repository_locally(repo_name: str, clone_url: str, token: str) -> None:
+    """Kloon een GitHub-repository naar de ingestelde lokale werkmap."""
     target = local_repo_path(repo_name)
     if os.path.isdir(target):
+        logger.debug("Repository staat al lokaal: %s", repo_name)
         return
+    logger.info("Lokale kloon gestart voor repository %s.", repo_name)
     authed_url = clone_url.replace("https://", f"https://{quote(token, safe='')}@", 1)
     result = subprocess.run(
         ["git", "clone", authed_url, target],
@@ -556,18 +790,23 @@ def clone_repository_locally(repo_name: str, clone_url: str, token: str) -> None
         timeout=180,
     )
     if result.returncode != 0:
+        logger.error("Klonen mislukt voor %s (exitcode %s).", repo_name, result.returncode)
         raise GitHubApiError(500, f"Klonen is mislukt: {result.stderr.strip() or result.stdout.strip()}")
+    logger.info("Repository lokaal gekloond: %s.", repo_name)
 
 
 def update_repository_locally(repo_name: str, default_branch: str) -> str:
-    """Zorgt dat de lokale map exact overeenkomt met github.com (harde reset op default branch)."""
+    """Werk de lokale map bij naar de remote standaardbranch (harde reset)."""
+    logger.info("Lokale repository bijwerken: %s (branch=%s).", repo_name, default_branch)
     run_git(repo_name, ["fetch", "--quiet", "origin"], timeout=60)
     checkout = run_git(repo_name, ["checkout", default_branch])
     if checkout.returncode != 0:
         run_git(repo_name, ["checkout", "-B", default_branch, f"origin/{default_branch}"])
     reset = run_git(repo_name, ["reset", "--hard", f"origin/{default_branch}"])
     if reset.returncode != 0:
+        logger.error("Bijwerken van %s mislukt: %s", repo_name, reset.stderr.strip() or reset.stdout.strip())
         raise GitHubApiError(500, f"Bijwerken is mislukt: {reset.stderr.strip() or reset.stdout.strip()}")
+    logger.info("Lokale repository bijgewerkt: %s.", repo_name)
     return reset.stdout.strip() or "Lokale map is bijgewerkt."
 
 
@@ -575,6 +814,7 @@ PROJECT_FILE_IGNORE_DIRS = {".git", "node_modules", "__pycache__", ".venv", "ven
 
 
 def list_project_files(repo_name: str) -> list[dict[str, Any]]:
+    """Maak een lijst van projectbestanden en sla technische mappen over."""
     root = local_repo_path(repo_name)
     entries: list[dict[str, Any]] = []
     if not os.path.isdir(root):
@@ -623,11 +863,13 @@ TOOL_FOR_EXTENSION = {
 
 
 def guess_tool_for_file(file_path: str) -> str:
+    """Kies op basis van de extensie welke editor een bestand opent."""
     extension = os.path.splitext(file_path)[1].lower()
     return TOOL_FOR_EXTENSION.get(extension, "system")
 
 
 def resolve_tool_command(tool: str, absolute_path: str) -> list[str]:
+    """Zoek de startopdracht voor de gekozen editor of standaardapp."""
     if tool == "arduino":
         candidates = [
             os.path.join(os.getenv("ProgramFiles", r"C:\Program Files"), "Arduino IDE", "Arduino IDE.exe"),
@@ -661,6 +903,7 @@ def _watch_editor_process(session_id: str, popen: "subprocess.Popen[Any]", tool:
 
 
 def open_file_in_tool(repo_name: str, file_path: str) -> dict[str, Any]:
+    """Open een lokaal projectbestand en registreer de editor-sessie."""
     root = local_repo_path(repo_name)
     absolute_path = os.path.normpath(os.path.join(root, file_path))
     if not absolute_path.startswith(os.path.normpath(root)) or not os.path.isfile(absolute_path):
@@ -700,13 +943,31 @@ def get_open_file_session(session_id: str) -> dict[str, Any] | None:
         return dict(session) if session else None
 
 
+def create_github_release(
+    token: str, repo_name: str, tag: str, branch: str, notes: str
+) -> str:
+    """Maakt een GitHub-release; geeft een melding terug en gooit geen fout bij mislukken."""
+    try:
+        github_request(
+            token,
+            "POST",
+            repo_path(repo_name, "/releases"),
+            payload={"tag_name": tag, "target_commitish": branch, "name": tag, "body": notes},
+        )
+    except GitHubApiError as exc:
+        return f" Release {tag} kon niet worden aangemaakt: {exc.message}"
+    return f" Release {tag} is aangemaakt."
+
+
 def commit_and_push_changes(
+    token: str,
     repo_name: str,
     default_branch: str,
     author_name: str,
     version: str,
     summary: str,
 ) -> str:
+    """Commit lokale wijzigingen, push ze en maak daarna een GitHub-release."""
     add_result = run_git(repo_name, ["add", "-A"])
     if add_result.returncode != 0:
         raise GitHubApiError(500, f"Kon wijzigingen niet stagen: {add_result.stderr.strip()}")
@@ -723,7 +984,9 @@ def commit_and_push_changes(
     if push_result.returncode != 0:
         raise GitHubApiError(500, f"Push is mislukt: {push_result.stderr.strip() or push_result.stdout.strip()}")
 
-    return "Wijzigingen zijn gecommit en gepusht naar GitHub."
+    notes = f"{summary}\n\nDoor: {author_name}"
+    release_message = create_github_release(token, repo_name, version, default_branch, notes)
+    return "Wijzigingen zijn gecommit en gepusht naar GitHub." + release_message
 
 
 def get_who_is_working_on(token: str, repo_name: str) -> list[dict[str, Any]]:
@@ -744,6 +1007,7 @@ def get_who_is_working_on(token: str, repo_name: str) -> list[dict[str, Any]]:
 
 
 def search_items(token: str, query: str, per_page: int | None = None) -> dict[str, Any]:
+    """Zoek issues of pull requests via de GitHub-zoek-API."""
     result = github_request(
         token,
         "GET",
@@ -759,6 +1023,7 @@ def search_items(token: str, query: str, per_page: int | None = None) -> dict[st
 
 
 def get_org_repositories(token: str) -> list[dict[str, Any]]:
+    """Haal repositories van de ingestelde GitHub-organisatie op."""
     return github_request(
         token,
         "GET",
@@ -846,6 +1111,7 @@ def get_org_issues(token: str) -> dict[str, Any]:
 
 
 def get_current_auth() -> AuthSession | None:
+    """Zoek de ingelogde gebruiker op aan de hand van de sessiecookie."""
     session_id = request.cookies.get(SESSION_COOKIE_NAME)
     if not session_id:
         return None
@@ -859,12 +1125,14 @@ def parse_form_or_json() -> dict[str, Any]:
 
 
 def api_success(message: str, **extra: Any):
+    """Maak een consistente JSON-respons voor een geslaagde API-actie."""
     payload = {"ok": True, "message": message}
     payload.update(extra)
     return jsonify(payload)
 
 
 def api_error(message: str, status_code: int):
+    """Maak een consistente JSON-foutrespons met de juiste HTTP-status."""
     return jsonify({"ok": False, "message": message}), status_code
 
 
@@ -888,11 +1156,13 @@ def auto_login_from_config() -> str | None:
 
     try:
         profile = github_request(token, "GET", "/user")
-    except GitHubApiError:
+    except GitHubApiError as exc:
+        logger.warning("Automatisch aanmelden mislukt (HTTP %s).", exc.status_code)
         return None
     github_login = str(profile.get("login", ""))
     expected_login = str(APP_CONFIG["default_username"])
     if github_login.lower() != expected_login.lower():
+        logger.warning("Automatisch aanmelden geweigerd: GitHub-account komt niet overeen met configuratie.")
         return None
 
     session_id = secrets.token_urlsafe(24)
@@ -901,14 +1171,29 @@ def auto_login_from_config() -> str | None:
         token=token,
         created_at=datetime.now(timezone.utc),
     )
+    g.auth = SESSION_STORE[session_id]
+    record_user_activity("Aangemeld", "Automatisch via de opgeslagen configuratie")
     AUTO_LOGIN_CACHE["session_id"] = session_id
     AUTO_LOGIN_CACHE["verified_at"] = time.time()
+    logger.info("Automatisch aangemeld als %s.", github_login)
     return session_id
+
+
+# ---------------------------------------------------------------------------
+# Flask-hooks voor sessies, templates en foutmeldingen
+# ---------------------------------------------------------------------------
 
 
 @app.before_request
 def load_request_context():
+    """Vul de request-context met een bestaande of automatisch gemaakte sessie."""
     g.auth = get_current_auth()
+    logger.debug(
+        "Aanvraag ontvangen: %s %s (aangemeld=%s).",
+        request.method,
+        request.path,
+        g.auth is not None,
+    )
     g.new_auto_login_session_id = None
     if g.auth is None:
         session_id = auto_login_from_config()
@@ -919,8 +1204,10 @@ def load_request_context():
 
 @app.after_request
 def apply_auto_login_cookie(response):
+    """Plaats een sessiecookie wanneer automatisch aanmelden is gelukt."""
     session_id = getattr(g, "new_auto_login_session_id", None)
     if session_id:
+        logger.debug("Automatische sessiecookie toegevoegd.")
         response.set_cookie(
             SESSION_COOKIE_NAME,
             session_id,
@@ -932,8 +1219,52 @@ def apply_auto_login_cookie(response):
     return response
 
 
+LIGHTBAR_CACHE_SECONDS = 30
+LIGHTBAR_CACHE: dict[str, Any] = {"key": None, "checked_at": 0.0, "data": None}
+
+
+def build_active_work(pulls: dict[str, Any]) -> list[dict[str, Any]]:
+    active_work = [
+        {
+            "user": pull.get("user", {}).get("login", "onbekend"),
+            "repo_name": pull.get("repo_name", ""),
+            "title": pull.get("title", ""),
+            "updated_at": pull.get("updated_at"),
+            "url": pull.get("html_url"),
+        }
+        for pull in pulls.get("items", [])
+    ]
+    active_work.sort(key=lambda item: item.get("updated_at") or "", reverse=True)
+    return active_work
+
+
+def get_lightbar_data() -> dict[str, Any]:
+    """Gegevens voor de altijd zichtbare lichtbalk, kort gecachet."""
+    empty = {"repo_count": 0, "active_work": []}
+    if not g.get("auth") or request.endpoint in (None, "static"):
+        return empty
+    key = (g.auth.username, current_org())
+    cached = LIGHTBAR_CACHE["data"]
+    if (
+        cached is not None
+        and LIGHTBAR_CACHE["key"] == key
+        and time.time() - LIGHTBAR_CACHE["checked_at"] < LIGHTBAR_CACHE_SECONDS
+    ):
+        return cached
+    try:
+        repos = get_org_repositories(g.auth.token)
+        pulls = get_org_pull_requests(g.auth.token)
+    except Exception as exc:
+        logger.debug("Lichtbalkgegevens niet beschikbaar: %s", exc)
+        return empty
+    data = {"repo_count": len(repos), "active_work": build_active_work(pulls)[:6]}
+    LIGHTBAR_CACHE.update(key=key, checked_at=time.time(), data=data)
+    return data
+
+
 @app.context_processor
 def inject_template_context():
+    """Deel algemene app-, gebruiker- en systeemgegevens met templates."""
     return {
         "app_name": APP_CONFIG["app_name"],
         "organization": current_org(),
@@ -943,17 +1274,26 @@ def inject_template_context():
         "nav_items": get_nav_items(),
         "current_user": g.auth.username if g.auth else None,
         "system_checks": get_system_check_results(),
+        "user_activity": get_user_activity(),
+        "lightbar": get_lightbar_data(),
     }
 
 
 @app.errorhandler(GitHubApiError)
 def handle_github_error(exc: GitHubApiError):
+    """Vertaal GitHub-fouten naar JSON-antwoorden of een melding in de pagina."""
+    logger.warning("GitHub-fout afgehandeld voor %s %s (HTTP %s).", request.method, request.path, exc.status_code)
     if request.path.startswith("/api/"):
         return api_error(exc.message, exc.status_code)
     flash(exc.message, "error")
     if g.auth is None:
         return redirect(url_for("login"))
     return redirect(url_for("dashboard"))
+
+
+# ---------------------------------------------------------------------------
+# Paginaroutes voor dashboard en GitHub-informatie
+# ---------------------------------------------------------------------------
 
 
 @app.route("/")
@@ -967,20 +1307,27 @@ def home():
 def login():
     if request.method == "POST":
         token = (request.form.get("token") or "").strip()
+        username = (request.form.get("username") or "").strip()
         next_url = (request.form.get("next") or "").strip()
-        if not token:
-            flash("Een GitHub token is verplicht.", "error")
+        logger.info("Handmatige GitHub-aanmelding gestart voor gebruikersnaam %s.", username or "(ontbreekt)")
+        if not token or not username:
+            logger.warning("Aanmelding afgewezen: gebruikersnaam of token ontbreekt.")
+            flash("Een GitHub username en token zijn verplicht.", "error")
             return render_template("login.html", next_url=next_url)
 
         profile = github_request(token, "GET", "/user")
         github_login = str(profile.get("login", ""))
-        expected_login = str(APP_CONFIG["default_username"])
-        if github_login.lower() != expected_login.lower():
+        if github_login.lower() != username.lower():
+            logger.warning("Aanmelding afgewezen: token hoort bij een ander GitHub-account dan opgegeven.")
             flash(
-                f"Deze app is ingericht voor {expected_login}. Je gebruikte token hoort bij {github_login}.",
+                f"Je token hoort bij {github_login}, niet bij {username}.",
                 "error",
             )
             return render_template("login.html", next_url=next_url)
+
+        save_app_config({"default_username": github_login, "personal_access_token": token})
+        AUTO_LOGIN_CACHE["session_id"] = None
+        AUTO_LOGIN_CACHE["verified_at"] = 0.0
 
         session_id = secrets.token_urlsafe(24)
         SESSION_STORE[session_id] = AuthSession(
@@ -988,6 +1335,8 @@ def login():
             token=token,
             created_at=datetime.now(timezone.utc),
         )
+        g.auth = SESSION_STORE[session_id]
+        record_user_activity("Aangemeld", "Handmatig met GitHub")
         target = next_url or url_for("dashboard")
         response = make_response(redirect(target))
         response.set_cookie(
@@ -998,6 +1347,7 @@ def login():
             secure=False,
             max_age=60 * 60 * 8,
         )
+        logger.info("Gebruiker %s is aangemeld.", github_login)
         return response
 
     return render_template("login.html", next_url=(request.args.get("next") or ""))
@@ -1006,8 +1356,12 @@ def login():
 @app.post("/logout")
 def logout():
     session_id = request.cookies.get(SESSION_COOKIE_NAME)
+    auth = SESSION_STORE.get(session_id) if session_id else None
+    if auth:
+        record_user_activity("Afgemeld", "GitHub-sessie beëindigd")
     if session_id:
         SESSION_STORE.pop(session_id, None)
+    logger.info("Gebruiker uitgelogd: %s.", auth.username if auth else "onbekend")
     response = make_response(redirect(url_for("login")))
     response.delete_cookie(SESSION_COOKIE_NAME)
     flash("Je bent uitgelogd.", "success")
@@ -1019,22 +1373,15 @@ def logout():
 def dashboard():
     repos = get_org_repositories(g.auth.token)
     pulls = get_org_pull_requests(g.auth.token)
-    active_work = [
-        {
-            "user": pull.get("user", {}).get("login", "onbekend"),
-            "repo_name": pull.get("repo_name", ""),
-            "title": pull.get("title", ""),
-            "updated_at": pull.get("updated_at"),
-            "url": pull.get("html_url"),
-        }
-        for pull in pulls.get("items", [])
-    ]
-    active_work.sort(key=lambda item: item.get("updated_at") or "", reverse=True)
+    active_work = build_active_work(pulls)
 
     active_repo_names = {item["repo_name"] for item in active_work if item["repo_name"]}
     repos_with_work = [repo for repo in repos if repo["name"] in active_repo_names]
     other_repos = [repo for repo in repos if repo["name"] not in active_repo_names]
-    ordered_repos = add_local_project_paths(repos_with_work + other_repos)
+    ordered_repos = add_repo_activity(
+        g.auth.token, add_local_project_paths(repos_with_work + other_repos)
+    )
+    logger.debug("Dashboardgegevens geladen: %s repositories, %s actieve items.", len(repos), len(active_work))
 
     return render_template(
         "dashboard.html",
@@ -1052,7 +1399,7 @@ def repositories():
     return render_template(
         "repositories.html",
         active_nav="repositories",
-        repositories=add_local_project_paths(repos),
+        repositories=add_repo_activity(g.auth.token, add_local_project_paths(repos)),
     )
 
 
@@ -1136,10 +1483,12 @@ def repository_detail(repo_name: str):
 @app.route("/project/<repo_name>")
 @require_login
 def project_detail(repo_name: str):
+    """Toon de GitHub-status en lokale bestanden van een softwareproject."""
     repo = get_repository(g.auth.token, repo_name)
     working_on = get_who_is_working_on(g.auth.token, repo_name)
     local_status = get_local_git_status(repo_name)
     files = list_project_files(repo_name) if local_status["cloned"] else []
+    record_user_activity("Softwareproject geopend", repo_name)
     return render_template(
         "project_detail.html",
         active_nav="dashboard",
@@ -1150,19 +1499,66 @@ def project_detail(repo_name: str):
     )
 
 
+# ---------------------------------------------------------------------------
+# API-routes voor lokale projecten en bestandsbewerking
+# ---------------------------------------------------------------------------
+
+
 @app.post("/api/projects/<repo_name>/clone")
 @require_login
 def clone_project(repo_name: str):
+    """Kloon een repository op verzoek vanuit de projectpagina."""
+    logger.info("Lokale kloon aangevraagd voor repository %s.", repo_name)
     repo = get_repository(g.auth.token, repo_name)
     clone_repository_locally(repo_name, repo["clone_url"], g.auth.token)
+    record_user_activity("Softwareproject lokaal opgehaald", repo_name)
     return api_success(f"{repo_name} is lokaal opgehaald.")
+
+
+@app.post("/api/projects/<repo_name>/delete")
+@require_login
+def delete_project(repo_name: str):
+    """Verwijder de GitHub-repository na expliciete naambevestiging."""
+    logger.warning("Verwijdering van GitHub-repository aangevraagd: %s.", repo_name)
+    payload = parse_form_or_json()
+    confirm_name = str(payload.get("confirm_name", ""))
+    try:
+        keystrokes = int(payload.get("keystrokes", 0))
+    except (TypeError, ValueError):
+        keystrokes = 0
+    if confirm_name != repo_name:
+        return api_error("De ingetypte naam komt niet overeen met de repository.", 400)
+    if keystrokes < len(repo_name):
+        return api_error("De naam moet handmatig worden getypt (plakken is niet toegestaan).", 400)
+
+    try:
+        github_request(g.auth.token, "DELETE", repo_path(repo_name))
+    except GitHubApiError as exc:
+        if exc.status_code in (403, 404):
+            return api_error(
+                "Verwijderen is geweigerd. Je token heeft het recht 'delete_repo' nodig en je moet "
+                f"beheerder van de repository zijn. GitHub meldt: {exc.message}",
+                exc.status_code,
+            )
+        raise
+    for key in [key for key in REPO_ACTIVITY_CACHE if key[0] == repo_name]:
+        REPO_ACTIVITY_CACHE.pop(key, None)
+    logger.info("GitHub-repository verwijderd: %s.", repo_name)
+    record_user_activity("Softwareproject van GitHub verwijderd", repo_name)
+    return api_success(
+        f"Repository {repo_name} is verwijderd van GitHub. De lokale map is niet aangeraakt.",
+        redirect=url_for("dashboard"),
+    )
 
 
 @app.post("/api/projects/<repo_name>/update")
 @require_login
 def update_project(repo_name: str):
+    """Werk de lokale projectmap bij vanaf GitHub."""
+    logger.info("Lokale update aangevraagd voor repository %s.", repo_name)
     repo = get_repository(g.auth.token, repo_name)
     message = update_repository_locally(repo_name, repo["default_branch"])
+    record_user_activity("Softwareproject bijgewerkt vanaf GitHub", repo_name)
     return api_success(message)
 
 
@@ -1178,8 +1574,11 @@ def open_project_file(repo_name: str):
     payload = parse_form_or_json()
     file_path = str(payload.get("file_path", "")).strip()
     if not file_path:
+        logger.warning("Bestand openen afgewezen: geen bestandspad ontvangen.")
         return api_error("Kies eerst een bestand.", 400)
     result = open_file_in_tool(repo_name, file_path)
+    logger.info("Bestand geopend voor project %s met %s.", repo_name, result["tool"])
+    record_user_activity("Projectbestand geopend", f"{repo_name} · {file_path}")
     return api_success(f"{file_path} wordt geopend met {result['tool']}.", **result)
 
 
@@ -1207,20 +1606,33 @@ def open_file_session_status(session_id: str):
 @app.post("/api/projects/<repo_name>/commit")
 @require_login
 def commit_project_changes(repo_name: str):
+    """Valideer commitgegevens en publiceer lokale wijzigingen naar GitHub."""
     payload = parse_form_or_json()
     author_name = str(payload.get("author_name", "")).strip()
     version = str(payload.get("version", "")).strip()
     summary = str(payload.get("summary", "")).strip()
     if not author_name:
+        logger.warning("Commit afgewezen voor %s: naam ontbreekt.", repo_name)
         return api_error("Vul je naam in.", 400)
     if not version:
+        logger.warning("Commit afgewezen voor %s: versienummer ontbreekt.", repo_name)
         return api_error("Vul een versienummer in.", 400)
     if not summary:
+        logger.warning("Commit afgewezen voor %s: samenvatting ontbreekt.", repo_name)
         return api_error("Beschrijf wat je hebt gewijzigd.", 400)
 
     repo = get_repository(g.auth.token, repo_name)
-    message = commit_and_push_changes(repo_name, repo["default_branch"], author_name, version, summary)
+    message = commit_and_push_changes(
+        g.auth.token, repo_name, repo["default_branch"], author_name, version, summary
+    )
+    logger.info("Lokale wijzigingen gecommit en gepusht voor %s (versie=%s).", repo_name, version)
+    record_user_activity("Wijzigingen opgeslagen en naar GitHub gepusht", f"{repo_name} · versie {version}")
     return api_success(message)
+
+
+# ---------------------------------------------------------------------------
+# Instellingen, hulp en ondersteunende acties
+# ---------------------------------------------------------------------------
 
 
 @app.route("/settings", methods=["GET", "POST"])
@@ -1228,26 +1640,55 @@ def settings_page():
     if request.method == "POST":
         new_workspace_root = (request.form.get("workspace_root") or "").strip()
         new_token = (request.form.get("personal_access_token") or "").strip()
+        new_log_level = (request.form.get("log_level") or "DEBUG").strip().upper()
+        if new_log_level not in LOG_LEVELS:
+            logger.warning("Instellingen niet opgeslagen: ongeldig logniveau.")
+            flash("Kies een geldig logniveau.", "error")
+            return redirect(url_for("settings_page"))
         if not new_workspace_root:
+            logger.warning("Instellingen niet opgeslagen: werkmap ontbreekt.")
             flash("Vul een geldig mappad in.", "error")
             return redirect(url_for("settings_page"))
         try:
             os.makedirs(new_workspace_root, exist_ok=True)
+            os.makedirs(os.path.join(new_workspace_root, "logging"), exist_ok=True)
         except OSError as exc:
+            logger.exception("Werkmap kon niet worden aangemaakt of gebruikt.")
             flash(f"Kon de map niet aanmaken/gebruiken: {exc}", "error")
             return redirect(url_for("settings_page"))
 
-        save_app_config({"workspace_root": new_workspace_root, "personal_access_token": new_token})
+        changed_fields = []
+        if APP_CONFIG.get("workspace_root") != new_workspace_root:
+            changed_fields.append("werkmap")
+        if str(APP_CONFIG.get("log_level") or "DEBUG").upper() != new_log_level:
+            changed_fields.append("logniveau")
+        if str(APP_CONFIG.get("personal_access_token") or "") != new_token:
+            changed_fields.append("GitHub-token")
+
+        save_app_config(
+            {
+                "workspace_root": new_workspace_root,
+                "personal_access_token": new_token,
+                "log_level": new_log_level,
+            }
+        )
+        configure_app_logging()
+        logger.info("Instellingen opgeslagen; werkmap gewijzigd naar %s.", new_workspace_root)
+        record_user_activity(
+            "Instellingen opgeslagen",
+            ", ".join(changed_fields) if changed_fields else "Instellingen gecontroleerd",
+        )
         AUTO_LOGIN_CACHE["session_id"] = None
         AUTO_LOGIN_CACHE["verified_at"] = 0.0
-        flash("Instellingen zijn opgeslagen.", "success")
-        return redirect(url_for("settings_page"))
+        return redirect(url_for("dashboard"))
 
+    record_user_activity("Instellingen geopend", "")
     return render_template(
         "settings.html",
         active_nav="settings_page",
         workspace_root=workspace_root(),
         personal_access_token=str(APP_CONFIG.get("personal_access_token") or ""),
+        log_level=str(APP_CONFIG.get("log_level") or "DEBUG").upper(),
     )
 
 
@@ -1265,6 +1706,7 @@ def browse_folders():
         return jsonify({"ok": True, "current_path": "", "parent_path": None, "folders": drives})
 
     if not os.path.isdir(requested_path):
+        logger.warning("Mappen bladeren afgewezen: opgegeven pad bestaat niet.")
         return api_error("Deze map bestaat niet.", 404)
 
     try:
@@ -1278,6 +1720,7 @@ def browse_folders():
                     continue
         subfolders.sort(key=lambda item: item["name"].lower())
     except PermissionError:
+        logger.warning("Geen toegang tot de aangevraagde map.")
         return api_error("Geen toegang tot deze map.", 403)
 
     normalized = os.path.normpath(requested_path)
@@ -1302,22 +1745,31 @@ def help_page():
 
 @app.post("/api/system-checks/refresh")
 def refresh_system_checks():
+    logger.info("Verversing van systeemcontrole aangevraagd.")
     with SYSTEM_CHECK_LOCK:
         SYSTEM_CHECK_CACHE["checked_at"] = 0.0
     results = get_system_check_results()
     return api_success("Systeemcontrole vernieuwd.", checks=results)
 
 
+# ---------------------------------------------------------------------------
+# API-acties voor issues, pull requests en workflows
+# ---------------------------------------------------------------------------
+
+
 @app.post("/api/issues")
 @require_login
 def create_issue():
+    """Maak een nieuw issue aan in de gekozen repository."""
     payload = parse_form_or_json()
     repo_name = str(payload.get("repo_name", "")).strip()
     title = str(payload.get("title", "")).strip()
     body = str(payload.get("body", "")).strip()
     if not repo_name:
+        logger.warning("Issue aanmaken afgewezen: repository ontbreekt.")
         return api_error("Kies eerst een softwareproject.", 400)
     if not title:
+        logger.warning("Issue aanmaken afgewezen voor %s: titel ontbreekt.", repo_name)
         return api_error("Een issue-titel is verplicht.", 400)
 
     issue = github_request(
@@ -1326,6 +1778,8 @@ def create_issue():
         repo_path(repo_name, "/issues"),
         payload={"title": title, "body": body},
     )
+    logger.info("Issue #%s aangemaakt in %s.", issue["number"], repo_name)
+    record_user_activity("Issue aangemaakt", f"{repo_name} · #{issue['number']}")
     return api_success(
         f"Issue #{issue['number']} is aangemaakt in {repo_name}.",
         url=issue["html_url"],
@@ -1341,15 +1795,19 @@ def close_issue(repo_name: str, issue_number: int):
         repo_path(repo_name, f"/issues/{issue_number}"),
         payload={"state": "closed"},
     )
+    logger.info("Issue #%s gesloten in %s.", issue_number, repo_name)
+    record_user_activity("Issue gesloten", f"{repo_name} · #{issue_number}")
     return api_success(f"Issue #{issue_number} is gesloten.")
 
 
 @app.post("/api/pulls/<repo_name>/<int:pull_number>/merge")
 @require_login
 def merge_pull_request(repo_name: str, pull_number: int):
+    """Voeg een pull request samen met de gekozen GitHub-methode."""
     payload = parse_form_or_json()
     merge_method = str(payload.get("merge_method", "squash")).strip().lower() or "squash"
     if merge_method not in {"merge", "squash", "rebase"}:
+        logger.warning("Pull request #%s in %s afgewezen: ongeldige merge-methode.", pull_number, repo_name)
         return api_error("Onbekende merge-methode.", 400)
 
     result = github_request(
@@ -1358,31 +1816,40 @@ def merge_pull_request(repo_name: str, pull_number: int):
         repo_path(repo_name, f"/pulls/{pull_number}/merge"),
         payload={"merge_method": merge_method},
     )
+    logger.info("Pull request #%s samengevoegd in %s (methode=%s).", pull_number, repo_name, merge_method)
+    record_user_activity("Pull request samengevoegd", f"{repo_name} · #{pull_number}")
     return api_success(result.get("message", f"Pull request #{pull_number} is gemerged."))
 
 
 @app.post("/api/workflows/<repo_name>/<int:run_id>/rerun")
 @require_login
 def rerun_workflow(repo_name: str, run_id: int):
+    """Start een mislukte of afgeronde GitHub Actions-run opnieuw."""
     github_request(
         g.auth.token,
         "POST",
         repo_path(repo_name, f"/actions/runs/{run_id}/rerun"),
     )
+    logger.info("Workflow-run %s opnieuw gestart in %s.", run_id, repo_name)
+    record_user_activity("Workflow opnieuw gestart", f"{repo_name} · run {run_id}")
     return api_success(f"Workflow run {run_id} is opnieuw gestart.")
 
 
 @app.post("/api/workflows/<repo_name>/<int:run_id>/cancel")
 @require_login
 def cancel_workflow(repo_name: str, run_id: int):
+    """Annuleer een workflow-run die nog bezig is."""
     github_request(
         g.auth.token,
         "POST",
         repo_path(repo_name, f"/actions/runs/{run_id}/cancel"),
     )
+    logger.info("Workflow-run %s geannuleerd in %s.", run_id, repo_name)
+    record_user_activity("Workflow geannuleerd", f"{repo_name} · run {run_id}")
     return api_success(f"Workflow run {run_id} is geannuleerd.")
 
 
+# Koppel de projectaanmaakroutes aan dezelfde authenticatie en GitHub-functies.
 app.register_blueprint(
     create_blueprint(
         require_login=require_login,
@@ -1391,11 +1858,13 @@ app.register_blueprint(
         current_org=current_org,
         workspace_root=workspace_root,
         github_api_error=GitHubApiError,
+        record_activity=record_user_activity,
     )
 )
 
 
 if __name__ == "__main__":
+    # Start de lokale webapp en open het dashboard in de standaardbrowser.
     port = int(os.getenv("PORT", "5080"))
     threading.Timer(1.0, webbrowser.open, args=(f"http://127.0.0.1:{port}/dashboard",)).start()
     app.run(host="127.0.0.1", port=port, debug=False)
