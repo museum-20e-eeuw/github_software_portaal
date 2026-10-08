@@ -259,6 +259,7 @@ SYSTEM_CHECK_LOCK = threading.Lock()
 SYSTEM_CHECK_CACHE: dict[str, Any] = {"checked_at": 0.0, "results": []}
 
 VERSION_TAG_PATTERN = re.compile(r"\d+(?:\.\d+)+")
+NUMERIC_VERSION_PATTERN = re.compile(r"(v?)(\d+(?:\.\d+)*)", re.IGNORECASE)
 
 
 def parse_version_tuple(value: str | None) -> tuple[int, ...] | None:
@@ -268,6 +269,18 @@ def parse_version_tuple(value: str | None) -> tuple[int, ...] | None:
     if not match:
         return None
     return tuple(int(part) for part in match.group(0).split("."))
+
+
+def suggest_next_version(current: str | None) -> str:
+    """Verhoog het laatste cijfer met behoud van notatie (1 -> 2, 1.0 -> 1.1, 1.2.3 -> 1.2.4, 0.01 -> 0.02)."""
+    match = NUMERIC_VERSION_PATTERN.fullmatch((current or "").strip())
+    if not match:
+        return "0.1.0"
+    prefix, numbers = match.groups()
+    parts = numbers.split(".")
+    last = parts[-1]
+    parts[-1] = str(int(last) + 1).zfill(len(last))
+    return f"{prefix}{'.'.join(parts)}"
 
 
 def compare_versions(local: str | None, latest: str | None) -> str:
@@ -648,7 +661,7 @@ REPO_ACTIVITY_CACHE: dict[tuple[str, str], dict[str, Any]] = {}
 
 
 def fetch_repo_activity(token: str, repo: dict[str, Any]) -> dict[str, Any]:
-    """Laatste commit (wie/wanneer) en versie (laatste release, anders laatste tag)."""
+    """Laatste commit (wie/wanneer) en versie uit commit, release of tag."""
     name = repo["name"]
     cache_key = (name, str(repo.get("pushed_at") or ""))
     cached = REPO_ACTIVITY_CACHE.get(cache_key)
@@ -663,6 +676,16 @@ def fetch_repo_activity(token: str, repo: dict[str, Any]) -> dict[str, Any]:
             commit = commits[0]
             activity["sha"] = str(commit.get("sha", ""))[:7]
             info = commit.get("commit", {})
+            commit_message = str(info.get("message") or "")
+            activity["version"] = next(
+                (
+                    line.split(":", 1)[1].strip()
+                    for line in commit_message.splitlines()
+                    if line.strip().lower().startswith("versie:")
+                    and line.split(":", 1)[1].strip()
+                ),
+                None,
+            )
             activity["last_commit_author"] = (
                 (commit.get("author") or {}).get("login") or info.get("author", {}).get("name")
             )
@@ -672,7 +695,7 @@ def fetch_repo_activity(token: str, repo: dict[str, Any]) -> dict[str, Any]:
 
     try:
         release = github_request(token, "GET", repo_path(name, "/releases/latest"))
-        if release:
+        if release and not activity["version"]:
             activity["version"] = release.get("tag_name") or release.get("name")
     except GitHubApiError as exc:
         logger.debug("Release voor %s niet beschikbaar: %s", name, exc.message)
@@ -1053,6 +1076,69 @@ def get_repository_issues(token: str, repo_name: str, per_page: int | None = Non
         params={"state": "open", "per_page": per_page or current_page_size()},
     )
     return [issue for issue in issues if "pull_request" not in issue]
+
+
+def parse_version_commit_message(message: str) -> dict[str, str | None]:
+    """Haal versie, naam en wijzigingsomschrijving uit een commitbericht van het portaal."""
+    version = author = None
+    summary_lines: list[str] = []
+    for line in message.splitlines():
+        key, _, value = line.partition(":")
+        key = key.strip().lower()
+        if key == "versie" and value.strip() and version is None:
+            version = value.strip()
+        elif key == "door" and value.strip() and author is None:
+            author = value.strip()
+        else:
+            summary_lines.append(line)
+    return {"version": version, "author": author, "summary": "\n".join(summary_lines).strip()}
+
+
+def get_version_history(token: str, repo_name: str, limit: int = 100) -> list[dict[str, Any]]:
+    """Versiehistorie: versie, datum, wie en wat er gewijzigd is, nieuwste eerst."""
+    try:
+        commits = github_request(token, "GET", repo_path(repo_name, "/commits"), params={"per_page": limit})
+    except GitHubApiError as exc:
+        logger.debug("Commits voor %s niet beschikbaar: %s", repo_name, exc.message)
+        commits = []
+    history: list[dict[str, Any]] = []
+    for commit in commits or []:
+        info = commit.get("commit", {})
+        parsed = parse_version_commit_message(str(info.get("message") or ""))
+        if not parsed["version"]:
+            continue
+        history.append(
+            {
+                "version": parsed["version"],
+                "date": info.get("author", {}).get("date"),
+                "author": parsed["author"]
+                or (commit.get("author") or {}).get("login")
+                or info.get("author", {}).get("name"),
+                "summary": parsed["summary"],
+            }
+        )
+
+    # Neem releases mee zonder versiecommit, zoals de startrelease van een nieuw project.
+    try:
+        releases = github_request(token, "GET", repo_path(repo_name, "/releases"), params={"per_page": 30})
+    except GitHubApiError as exc:
+        logger.debug("Releases voor %s niet beschikbaar: %s", repo_name, exc.message)
+        releases = []
+    known_versions = {item["version"] for item in history}
+    for release in releases or []:
+        version = release.get("tag_name") or release.get("name")
+        if not version or version in known_versions:
+            continue
+        history.append(
+            {
+                "version": version,
+                "date": release.get("published_at") or release.get("created_at"),
+                "author": (release.get("author") or {}).get("login"),
+                "summary": str(release.get("body") or "").strip(),
+            }
+        )
+    history.sort(key=lambda item: str(item["date"] or ""), reverse=True)
+    return history
 
 
 def get_repository_branches(token: str, repo_name: str, per_page: int | None = None) -> list[dict[str, Any]]:
@@ -1494,6 +1580,7 @@ def project_detail(repo_name: str):
         active_nav="dashboard",
         repo=repo,
         working_on=working_on,
+        version_history=get_version_history(g.auth.token, repo_name),
         local_status=local_status,
         files=files,
     )
@@ -1568,6 +1655,21 @@ def project_status(repo_name: str):
     return jsonify({"ok": True, "status": get_local_git_status(repo_name)})
 
 
+@app.get("/api/projects/<repo_name>/version-suggestion")
+@require_login
+def project_version_suggestion(repo_name: str):
+    repo = get_repository(g.auth.token, repo_name)
+    activity = fetch_repo_activity(g.auth.token, repo)
+    current_version = activity.get("version")
+    return jsonify(
+        {
+            "ok": True,
+            "current_version": current_version,
+            "suggested_version": suggest_next_version(current_version),
+        }
+    )
+
+
 @app.post("/api/projects/<repo_name>/open-file")
 @require_login
 def open_project_file(repo_name: str):
@@ -1625,6 +1727,8 @@ def commit_project_changes(repo_name: str):
     message = commit_and_push_changes(
         g.auth.token, repo_name, repo["default_branch"], author_name, version, summary
     )
+    for key in [key for key in REPO_ACTIVITY_CACHE if key[0] == repo_name]:
+        REPO_ACTIVITY_CACHE.pop(key, None)
     logger.info("Lokale wijzigingen gecommit en gepusht voor %s (versie=%s).", repo_name, version)
     record_user_activity("Wijzigingen opgeslagen en naar GitHub gepusht", f"{repo_name} · versie {version}")
     return api_success(message)

@@ -149,6 +149,7 @@ function bindProjectDetail() {
     const commitChangedFiles = document.getElementById("commit-changed-files");
     const commitAuthor = document.getElementById("commit-author");
     const commitVersion = document.getElementById("commit-version");
+    const commitVersionHint = document.getElementById("commit-version-hint");
     const commitSummary = document.getElementById("commit-summary");
     const commitCancelBtn = document.getElementById("commit-cancel-btn");
     const commitConfirmBtn = document.getElementById("commit-confirm-btn");
@@ -291,7 +292,7 @@ function bindProjectDetail() {
         }
     });
 
-    function openCommitModal(changedFiles) {
+    async function openCommitModal(changedFiles) {
         if (!commitBackdrop) {
             return;
         }
@@ -300,8 +301,34 @@ function bindProjectDetail() {
         commitVersion.value = "";
         commitSummary.value = "";
         commitBackdrop.hidden = false;
+        if (commitVersionHint) {
+            commitVersionHint.textContent = "Versievoorstel ophalen...";
+        }
         if (openFileStatus) {
             openFileStatus.textContent = "Wijzigingen gevonden. Vul de gegevens in om te syncen.";
+        }
+        try {
+            const response = await fetch(
+                `/api/projects/${encodeURIComponent(repoName)}/version-suggestion`,
+                { headers: { Accept: "application/json" } },
+            );
+            const payload = await response.json();
+            if (!response.ok || !payload.ok) {
+                throw new Error(payload.message || "Versievoorstel ophalen mislukt.");
+            }
+            if (!commitVersion.value.trim()) {
+                commitVersion.value = payload.suggested_version;
+            }
+            if (commitVersionHint) {
+                commitVersionHint.textContent = payload.current_version
+                    ? `Voorstel op basis van ${payload.current_version}; je kunt dit aanpassen.`
+                    : "Eerste versievoorstel; je kunt dit aanpassen.";
+            }
+        } catch (error) {
+            if (commitVersionHint) {
+                commitVersionHint.textContent = "Geen voorstel beschikbaar; vul zelf een versienummer in.";
+            }
+            showToast(error.message, true);
         }
     }
 

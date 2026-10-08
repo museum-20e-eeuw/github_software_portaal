@@ -683,6 +683,32 @@ main {
     line-height: 1.55;
 }
 
+.table-wrap {
+    overflow-x: auto;
+}
+
+.version-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.version-table th,
+.version-table td {
+    padding: 8px 12px;
+    text-align: left;
+    vertical-align: top;
+    border-bottom: 1px solid rgba(46, 42, 67, 0.12);
+}
+
+.version-table td:nth-child(1),
+.version-table td:nth-child(2) {
+    white-space: nowrap;
+}
+
+.version-summary {
+    white-space: pre-line;
+}
+
 .local-project-path {
     display: grid;
     gap: 4px;

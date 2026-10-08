@@ -41,6 +41,38 @@
 
     <article class="panel">
         <div class="panel-head">
+            <h2>Versie historie</h2>
+        </div>
+        {% if version_history %}
+            <div class="table-wrap">
+                <table class="version-table">
+                    <thead>
+                        <tr>
+                            <th>Versie</th>
+                            <th>Datum</th>
+                            <th>Wie</th>
+                            <th>Wat is er gewijzigd</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in version_history %}
+                            <tr>
+                                <td><strong>{{ item.version }}</strong></td>
+                                <td>{{ item.date|datetime_full }}</td>
+                                <td>{{ item.author or "-" }}</td>
+                                <td class="version-summary">{{ item.summary or "-" }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <p class="muted">Er zijn nog geen versies ingecheckt via het portaal.</p>
+        {% endif %}
+    </article>
+
+    <article class="panel">
+        <div class="panel-head">
             <h2>Lokale status</h2>
         </div>
         <div class="stack" id="local-status-block" data-cloned="{{ local_status.cloned|lower }}">
@@ -136,6 +168,7 @@
         <label>
             Versienummer
             <input type="text" id="commit-version" placeholder="bijv. 1.2.0" autocomplete="off" />
+            <span class="muted" id="commit-version-hint">Je kunt het voorstel aanpassen.</span>
         </label>
         <label>
             Wat is er gewijzigd?
