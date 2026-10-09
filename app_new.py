@@ -45,7 +45,14 @@ def run_git(token: str, args: list[str], cwd: str, *, identity: str | None = Non
         command.extend(["-c", f"user.name={identity}", "-c", f"user.email={identity}@users.noreply.github.com"])
     command.extend(args)
     try:
-        result = subprocess.run(command, cwd=cwd, capture_output=True, text=True, timeout=180)
+        result = subprocess.run(
+            command,
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=180,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
     except (OSError, subprocess.SubprocessError) as exc:
         # De opdrachtregel kan GitHub-inloggegevens bevatten; log daarom geen exceptiontekst.
         logger.error("Git kon niet worden gestart voor %s in %s (%s).", operation, cwd, type(exc).__name__)

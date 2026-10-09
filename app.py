@@ -20,6 +20,7 @@ import re
 import secrets
 import shutil
 import subprocess
+import sys
 import threading
 import time
 import webbrowser
@@ -33,6 +34,15 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
+
+NO_WINDOW_FLAGS = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
+
+def run_hidden(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess:
+    """subprocess.run zonder dat Windows een zichtbaar consolevenster opent."""
+    kwargs.setdefault("creationflags", NO_WINDOW_FLAGS)
+    return subprocess.run(*args, **kwargs)
+
 
 from flask import (
     Flask,
@@ -317,7 +327,7 @@ def fetch_latest_github_release(repo: str) -> str | None:
 
 def detect_git_version() -> str | None:
     try:
-        output = subprocess.run(
+        output = run_hidden(
             ["git", "--version"],
             capture_output=True,
             text=True,
@@ -333,7 +343,7 @@ def detect_git_version() -> str | None:
 def detect_vscode_version() -> str | None:
     for command in ("code", "code.cmd"):
         try:
-            output = subprocess.run(
+            output = run_hidden(
                 [command, "--version"],
                 capture_output=True,
                 text=True,
@@ -738,7 +748,7 @@ def run_git(repo_name: str, args: list[str], timeout: int = 30) -> subprocess.Co
     command = ["git", *args]
     logger.debug("Git-opdracht gestart voor %s: %s", repo_name, args[0] if args else "onbekend")
     try:
-        result = subprocess.run(
+        result = run_hidden(
             command,
             cwd=local_repo_path(repo_name),
             capture_output=True,
@@ -854,7 +864,7 @@ def clone_repository_locally(repo_name: str, clone_url: str, token: str) -> None
         return
     logger.info("Lokale kloon gestart voor repository %s.", repo_name)
     authed_url = clone_url.replace("https://", f"https://{quote(token, safe='')}@", 1)
-    result = subprocess.run(
+    result = run_hidden(
         ["git", "clone", authed_url, target],
         capture_output=True,
         text=True,
@@ -2028,8 +2038,47 @@ app.register_blueprint(
 )
 
 
+def _find_app_browser() -> str | None:
+    """Zoek Edge of Chrome, zodat een eigen browserproces gevolgd kan worden."""
+    roots = [os.environ.get(k) for k in ("ProgramFiles", "ProgramFiles(x86)", "LocalAppData")]
+    candidates = [
+        r"Microsoft\Edge\Application\msedge.exe",
+        r"Google\Chrome\Application\chrome.exe",
+    ]
+    for root in filter(None, roots):
+        for rel in candidates:
+            path = os.path.join(root, rel)
+            if os.path.exists(path):
+                return path
+    return None
+
+
+def _run_browser_and_exit(url: str, port: int) -> None:
+    """Open de browser met een eigen profiel; stop de server zodra het venster sluit."""
+    time.sleep(1.0)
+    browser = _find_app_browser()
+    if not browser:
+        webbrowser.open(url)
+        return
+    profile = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "GitHubSoftwarePortaal", "browser-profile")
+    os.makedirs(profile, exist_ok=True)
+    process = subprocess.Popen(
+        [browser, f"--user-data-dir={profile}", "--no-first-run", "--no-default-browser-check", url]
+    )
+    process.wait()
+    os._exit(0)
+
+
 if __name__ == "__main__":
-    # Start de lokale webapp en open het dashboard in de standaardbrowser.
+    # Bij pythonw.exe bestaan stdout/stderr niet; voorkom fouten bij schrijven.
+    if sys.stdout is None:
+        sys.stdout = open(os.devnull, "w")
+    if sys.stderr is None:
+        sys.stderr = open(os.devnull, "w")
     port = int(os.getenv("PORT", "5080"))
-    threading.Timer(1.0, webbrowser.open, args=(f"http://127.0.0.1:{port}/dashboard",)).start()
+    threading.Thread(
+        target=_run_browser_and_exit,
+        args=(f"http://127.0.0.1:{port}/dashboard", port),
+        daemon=True,
+    ).start()
     app.run(host="127.0.0.1", port=port, debug=False)
