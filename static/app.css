@@ -1,4 +1,4 @@
-:root {
+﻿:root {
     --bg: #f3ede2;
     --surface: rgba(255, 250, 243, 0.9);
     --surface-strong: #fffaf3;
@@ -1478,7 +1478,7 @@ textarea {
     text-align: left;
 }
 
-@media (min-width: 1000px) {
+@media (min-width: 1400px) {
     .hero-brand {
         position: absolute;
         left: 50%;
@@ -1487,6 +1487,76 @@ textarea {
     }
 }
 
-@media (max-width: 999px) {
+@media all {
     .hero-left { flex-wrap: wrap; justify-content: center; margin: 0 auto; }
 }
+/* Responsive hero: hamburgermenu alle breedtes */
+.hero-burger { display: none; }
+.hero-menu { display: flex; align-items: center; gap: 12px; }
+
+@media all {
+    .hero { flex-wrap: nowrap; gap: 8px; padding: 10px 14px; }
+    .hero-left { flex: 1 1 auto; flex-wrap: nowrap; justify-content: flex-start; margin: 0; gap: 10px; min-width: 0; }
+    .hero-brand { flex: 1 1 auto; min-width: 0; gap: 8px; }
+    .hero-copy { min-width: 0; overflow: hidden; }
+    .hero-copy h1 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 18px; }
+    .hero-copy p { display: none; }
+    .hero-meta { flex: 0 0 auto; flex-direction: row; flex-wrap: nowrap; margin-left: 0; gap: 8px; }
+    .clock-card { padding: 4px 8px; font-size: 0.7rem; gap: 4px; }
+    .clock-card .clock-label { font-size: 0.5rem; }
+
+    .hero-burger {
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 38px; height: 38px; padding: 0; cursor: pointer;
+        border-radius: 999px; color: #fff7ef;
+        border: 1px solid rgba(255, 250, 243, 0.25); background: rgba(255, 250, 243, 0.08);
+    }
+    .hero-burger:hover, .hero-burger[aria-expanded="true"] { background: rgba(255, 250, 243, 0.2); }
+
+    .hero-menu {
+        display: none; position: absolute; top: 100%; right: 8px; z-index: 40;
+        flex-direction: column; align-items: stretch; gap: 10px; min-width: 220px;
+        padding: 12px; border-radius: 16px;
+        background: rgba(46, 42, 67, 0.98); box-shadow: var(--shadow);
+    }
+    .hero-menu.open { display: flex; }
+    .hero-menu .hero-tools { justify-content: space-between; }
+    .hero-menu .org-card { align-self: stretch; width: auto; padding: 8px 10px; }
+    .hero-menu .account-actions { flex-wrap: wrap; justify-content: space-between; }
+    .hero-menu .account-actions .meta-text { font-size: 0.8rem; }
+    .hero-menu .account-actions .btn { font-size: 0.8rem; padding: 8px 12px; }
+
+    .lightbar-segment { flex: 1 1 100%; border-left: 0; border-top: 1px solid rgba(255, 250, 243, 0.14); padding: 12px 16px; }
+    .lightbar-count { flex: 1 1 auto; }
+}
+
+@media (max-width: 480px) {
+    .clock-card .clock-label { display: none; }
+    .hero-logo { width: 32px; height: 32px; }
+    .hero-copy h1 { font-size: 15px; }
+}
+
+@media all {
+    .hero { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; }
+    .hero-left { display: contents; }
+    .hero-brand { justify-content: center; text-align: center; position: static; transform: none; }
+    .hero-copy { text-align: center; overflow: visible; }
+    .hero-copy h1 { white-space: normal; text-overflow: clip; }
+    .hero-copy p { display: block; margin: 2px auto 0; font-size: 0.7rem; line-height: 1.25; }
+}
+
+@media (max-width: 560px) {
+    .hero-brand { flex-direction: column; gap: 4px; }
+    .hero-copy .eyebrow { font-size: 0.55rem; }
+    .hero-copy p { font-size: 0.62rem; }
+}
+
+.hero { grid-template-columns: minmax(44px, 1fr) minmax(0, auto) minmax(44px, 1fr); }
+.hero-left .dashboard-icon { justify-self: start; width: max-content; z-index: 5; }
+.hero-meta { justify-self: end; }
+
+/* Hamburgermenu: tekst eerst, dan icoon */
+.hero-menu { min-width: 240px; gap: 4px; }
+.hero-menu-item { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin: 0; padding: 10px 12px; border-radius: 12px; color: #fff7ef; text-decoration: none; font-weight: 700; font-size: 0.85rem; background: none; border: 0; }
+.hero-menu-item:hover, .hero-menu-item.active { background: rgba(255, 250, 243, 0.14); }
+.hero-menu-icon { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; flex: none; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
