@@ -830,7 +830,7 @@ def sync_state_label(status: dict[str, Any]) -> str:
 
 
 def sync_repository_locally(repo_name: str, direction: str) -> str:
-    """Breng de lokale map in sync: 'pull' (GitHub naar lokaal) of 'push' (lokaal naar GitHub)."""
+    """Breng de lokale map gelijk met GitHub (direction 'pull'). Pushen verloopt via de commit-route."""
     status = get_local_git_status(repo_name)
     branch = status["local_branch"]
     if not status["cloned"] or not branch:
@@ -843,18 +843,6 @@ def sync_repository_locally(repo_name: str, direction: str) -> str:
         if clean.returncode != 0:
             raise GitHubApiError(500, f"Opschonen is mislukt: {clean.stderr.strip() or clean.stdout.strip()}")
         return "Lokale map is gelijkgetrokken met GitHub."
-    if direction == "push":
-        if status["behind"]:
-            raise GitHubApiError(409, "GitHub heeft nieuwere commits. Kies eerst 'GitHub naar lokaal' of los dit handmatig op.")
-        if status["has_local_changes"]:
-            add = run_git(repo_name, ["add", "-A"])
-            commit = run_git(repo_name, ["commit", "-m", "Synchronisatie vanuit softwareportaal"])
-            if add.returncode != 0 or commit.returncode != 0:
-                raise GitHubApiError(500, f"Committen is mislukt: {(commit.stderr or commit.stdout or add.stderr).strip()}")
-        push = run_git(repo_name, ["push", "origin", branch], timeout=120)
-        if push.returncode != 0:
-            raise GitHubApiError(500, f"Pushen is mislukt: {push.stderr.strip() or push.stdout.strip()}")
-        return "Lokale wijzigingen zijn naar GitHub gestuurd."
     raise GitHubApiError(400, "Onbekende synchronisatierichting.")
 
 
@@ -1060,8 +1048,10 @@ def commit_and_push_changes(
     if commit_result.returncode != 0:
         combined = f"{commit_result.stdout}\n{commit_result.stderr}".strip()
         if "nothing to commit" in combined.lower():
-            raise GitHubApiError(400, "Er zijn geen wijzigingen om in te checken.")
-        raise GitHubApiError(500, f"Commit is mislukt: {combined}")
+            if not get_local_git_status(repo_name)["ahead"]:
+                raise GitHubApiError(400, "Er zijn geen wijzigingen om in te checken.")
+        else:
+            raise GitHubApiError(500, f"Commit is mislukt: {combined}")
 
     push_result = run_git(repo_name, ["push", "origin", f"HEAD:{default_branch}"], timeout=60)
     if push_result.returncode != 0:

@@ -112,7 +112,7 @@
                     {% endif %}
                     <strong>Lokaal in sync brengen:</strong>
                     <button class="btn btn-warn" type="button" id="sync-pull-btn" data-direction="pull">GitHub → lokaal (lokale wijzigingen gaan verloren)</button>
-                    <button class="btn btn-primary" type="button" id="sync-push-btn" data-direction="push"{% if local_status.behind %} disabled title="GitHub heeft nieuwere commits; haal die eerst binnen."{% endif %}>Lokaal → GitHub</button>
+                    <button class="btn btn-primary" type="button" id="sync-push-btn" data-direction="push" data-files="{{ local_status.changed_files|tojson|forceescape }}" data-commits="{{ local_status.outgoing_commits|tojson|forceescape }}"{% if local_status.behind %} disabled title="GitHub heeft nieuwere commits; haal die eerst binnen."{% endif %}>Lokaal → GitHub</button>
                 {% endif %}
             {% endif %}
         </div>

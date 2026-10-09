@@ -194,7 +194,13 @@ function bindProjectDetail() {
     for (const btn of document.querySelectorAll("#sync-pull-btn, #sync-push-btn")) {
         btn.addEventListener("click", async () => {
             const direction = btn.dataset.direction;
-            if (direction === "pull" && !window.confirm("Lokale wijzigingen en niet-gepushte commits gaan verloren. Doorgaan?")) {
+            if (direction === "push") {
+                const files = JSON.parse(btn.dataset.files || "[]");
+                const commits = JSON.parse(btn.dataset.commits || "[]");
+                openCommitModal(files.length ? files : commits);
+                return;
+            }
+            if (!window.confirm("Lokale wijzigingen en niet-gepushte commits gaan verloren. Doorgaan?")) {
                 return;
             }
             btn.disabled = true;
