@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="{{ url_for('static', filename='app.css', v=8) }}" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='app.css', v=11) }}" />
 </head>
 <body>
     <div class="background-glow glow-a"></div>
@@ -60,6 +60,19 @@
                         <div class="hero-menu-item"><span class="hero-menu-text">Nog niet ingelogd</span></div>
                     {% endif %}
 
+                    {% if system_checks %}
+                        <button class="hero-menu-item system-check-trigger" type="button" id="system-check-open"
+                                aria-haspopup="dialog" aria-controls="system-check-dialog">
+                            <span class="hero-menu-text">Systeem controle</span>
+                            <span class="hero-menu-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <rect x="3" y="4" width="18" height="13" rx="2"/>
+                                    <path d="M8 21h8M12 17v4M8 10l2.5 2.5L16 7"/>
+                                </svg>
+                            </span>
+                        </button>
+                    {% endif %}
+
                     <a class="hero-menu-item {% if active_nav == 'settings_page' %}active{% endif %}" href="{{ url_for('dashboard') if active_nav == 'settings_page' else url_for('settings_page') }}">
                         <span class="hero-menu-text">{{ 'Instellingen sluiten' if active_nav == 'settings_page' else 'Instellingen' }}</span>
                         <span class="hero-menu-icon">
@@ -80,15 +93,15 @@
             </div>
         </header>
 
-
         {% if system_checks %}
-            <section class="system-check-panel" aria-label="Systeemcontrole">
-                <div class="system-check-head">
-                    <span class="eyebrow">Systeemcontrole</span>
-                    <form method="post" action="{{ url_for('refresh_system_checks') }}" data-api-form="true" data-reload="true">
-                        <button class="btn btn-ghost btn-small" type="submit">Opnieuw controleren</button>
-                    </form>
+            <dialog class="panel stack system-check-dialog" id="system-check-dialog" aria-labelledby="system-check-title">
+                <div class="panel-head">
+                    <h2 id="system-check-title">Systeem controle</h2>
+                    <button class="btn btn-ghost btn-small" type="button" id="system-check-close">Sluiten</button>
                 </div>
+                <form method="post" action="{{ url_for('refresh_system_checks') }}" data-api-form="true" data-reload="true">
+                    <button class="btn btn-ghost btn-small" type="submit">Opnieuw controleren</button>
+                </form>
                 <ul class="system-check-list">
                     {% for check in system_checks %}
                         <li class="system-check-item level-{{ check.level }}">
@@ -104,10 +117,8 @@
                         </li>
                     {% endfor %}
                 </ul>
-            </section>
+            </dialog>
         {% endif %}
-
-
 
         {% if current_user %}<section class="lightbar" aria-label="Overzicht">
             <div class="lightbar-glow" aria-hidden="true"></div>

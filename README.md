@@ -11,7 +11,7 @@ Een lokale webapp voor medewerkers van Museum van de 20ste Eeuw om softwareproje
 - Projecten lokaal klonen, synchroniseren en bestanden openen in Visual Studio Code, Arduino IDE of de standaardapp.
 - Lokale wijzigingen committen en pushen, met optioneel een GitHub-release.
 - Nieuwe GitHub-projecten aanmaken met een Python- of Arduino-startproject, of als kopie van een bestaand project.
-- Installatie van Git, Visual Studio Code en Arduino IDE controleren.
+- Installatie van Git, Visual Studio Code en Arduino IDE controleren via **Systeem controle** in het hamburger menu van de banner. De resultaten verschijnen in een popup met een knop om opnieuw te controleren en een sluitknop.
 
 > **Let op:** de actie om een lokale repository bij te werken voert een harde reset uit naar de standaardbranch op GitHub. Niet-gecommitte lokale wijzigingen kunnen daarbij verloren gaan.
 

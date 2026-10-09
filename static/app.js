@@ -54,9 +54,35 @@ function bindApiForms() {
 
 document.addEventListener("DOMContentLoaded", () => {
     bindApiForms();
+    bindSystemCheckDialog();
     bindProjectDetail();
     bindFolderPicker();
 });
+
+function bindSystemCheckDialog() {
+    const openButton = document.getElementById("system-check-open");
+    const dialog = document.getElementById("system-check-dialog");
+    const closeButton = document.getElementById("system-check-close");
+    if (!openButton || !(dialog instanceof HTMLDialogElement) || !closeButton) {
+        return;
+    }
+
+    openButton.addEventListener("click", () => {
+        const menu = document.getElementById("hero-menu");
+        const burger = document.querySelector(".hero-burger");
+        menu?.classList.remove("open");
+        burger?.setAttribute("aria-expanded", "false");
+        dialog.showModal();
+        closeButton.focus();
+    });
+
+    closeButton.addEventListener("click", () => dialog.close());
+    dialog.addEventListener("click", (event) => {
+        if (event.target === dialog) {
+            dialog.close();
+        }
+    });
+}
 
 function bindFolderPicker() {
     const browseBtn = document.getElementById("browse-folder-btn");
