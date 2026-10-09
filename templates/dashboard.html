@@ -32,7 +32,11 @@
                     <div class="local-project-path">
                         <span class="eyebrow">Lokale directory</span>
                         <code title="{{ repo.local_path }}">{{ repo.local_path }}</code>
-                        <span class="muted">{{ "Lokaal aanwezig" if repo.cloned else "Nog niet lokaal opgehaald" }}</span>
+                        <span class="muted">
+                            {% if repo.sync_state == "in_sync" %}✅ Lokaal in sync met GitHub
+                            {% elif repo.sync_state == "out_of_sync" %}⚠️ Lokaal niet in sync met GitHub
+                            {% else %}Nog niet lokaal opgehaald{% endif %}
+                        </span>
                     </div>
                 </a>
             {% endfor %}

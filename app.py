@@ -642,13 +642,23 @@ def is_repo_cloned_locally(repo_name: str) -> bool:
 def add_local_project_paths(repositories: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Vul repositorygegevens aan met het lokale pad en de kloonstatus."""
     root = workspace_root()
+
+    def sync_state(repo_name: str) -> str:
+        try:
+            return sync_state_label(get_local_git_status(repo_name))
+        except (OSError, subprocess.SubprocessError, ValueError):
+            return "out_of_sync"
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        states = list(pool.map(lambda repo: sync_state(repo["name"]), repositories))
     return [
         {
             **repo,
             "local_path": os.path.abspath(os.path.join(root, repo["name"])),
-            "cloned": os.path.isdir(os.path.join(root, repo["name"], ".git")),
+            "cloned": state != "missing",
+            "sync_state": state,
         }
-        for repo in repositories
+        for repo, state in zip(repositories, states)
     ]
 
 
@@ -787,6 +797,18 @@ def get_local_git_status(repo_name: str) -> dict[str, Any]:
 
     in_sync = ahead == 0 and behind == 0 and not changed_files
 
+    def commit_lines(revision_range: str) -> list[str]:
+        if not local_branch or not (ahead or behind):
+            return []
+        result = run_git(repo_name, ["log", "--format=%h %s (%an)", "-n", "20", revision_range])
+        return [line for line in result.stdout.splitlines() if line.strip()] if result.returncode == 0 else []
+
+    diff_lines: list[str] = []
+    if local_branch and (ahead or behind):
+        diff = run_git(repo_name, ["diff", "--name-status", f"HEAD...origin/{local_branch}"])
+        if diff.returncode == 0:
+            diff_lines = [line.replace("\t", "  ") for line in diff.stdout.splitlines() if line.strip()]
+
     return {
         "cloned": True,
         "in_sync": in_sync,
@@ -795,7 +817,45 @@ def get_local_git_status(repo_name: str) -> dict[str, Any]:
         "behind": behind,
         "has_local_changes": bool(changed_files),
         "changed_files": changed_files,
+        "incoming_commits": commit_lines(f"HEAD..origin/{local_branch}"),
+        "outgoing_commits": commit_lines(f"origin/{local_branch}..HEAD"),
+        "remote_changed_files": diff_lines,
     }
+
+
+def sync_state_label(status: dict[str, Any]) -> str:
+    if not status["cloned"]:
+        return "missing"
+    return "in_sync" if status["in_sync"] else "out_of_sync"
+
+
+def sync_repository_locally(repo_name: str, direction: str) -> str:
+    """Breng de lokale map in sync: 'pull' (GitHub naar lokaal) of 'push' (lokaal naar GitHub)."""
+    status = get_local_git_status(repo_name)
+    branch = status["local_branch"]
+    if not status["cloned"] or not branch:
+        raise GitHubApiError(400, "Dit project staat niet (correct) lokaal.")
+    if direction == "pull":
+        reset = run_git(repo_name, ["reset", "--hard", f"origin/{branch}"], timeout=60)
+        if reset.returncode != 0:
+            raise GitHubApiError(500, f"Bijwerken is mislukt: {reset.stderr.strip() or reset.stdout.strip()}")
+        clean = run_git(repo_name, ["clean", "-fd"], timeout=60)
+        if clean.returncode != 0:
+            raise GitHubApiError(500, f"Opschonen is mislukt: {clean.stderr.strip() or clean.stdout.strip()}")
+        return "Lokale map is gelijkgetrokken met GitHub."
+    if direction == "push":
+        if status["behind"]:
+            raise GitHubApiError(409, "GitHub heeft nieuwere commits. Kies eerst 'GitHub naar lokaal' of los dit handmatig op.")
+        if status["has_local_changes"]:
+            add = run_git(repo_name, ["add", "-A"])
+            commit = run_git(repo_name, ["commit", "-m", "Synchronisatie vanuit softwareportaal"])
+            if add.returncode != 0 or commit.returncode != 0:
+                raise GitHubApiError(500, f"Committen is mislukt: {(commit.stderr or commit.stdout or add.stderr).strip()}")
+        push = run_git(repo_name, ["push", "origin", branch], timeout=120)
+        if push.returncode != 0:
+            raise GitHubApiError(500, f"Pushen is mislukt: {push.stderr.strip() or push.stdout.strip()}")
+        return "Lokale wijzigingen zijn naar GitHub gestuurd."
+    raise GitHubApiError(400, "Onbekende synchronisatierichting.")
 
 
 def clone_repository_locally(repo_name: str, clone_url: str, token: str) -> None:
@@ -1646,6 +1706,17 @@ def update_project(repo_name: str):
     repo = get_repository(g.auth.token, repo_name)
     message = update_repository_locally(repo_name, repo["default_branch"])
     record_user_activity("Softwareproject bijgewerkt vanaf GitHub", repo_name)
+    return api_success(message)
+
+
+@app.post("/api/projects/<repo_name>/sync")
+@require_login
+def sync_project(repo_name: str):
+    """Breng de lokale map in sync met GitHub in de gekozen richting."""
+    direction = str(parse_form_or_json().get("direction", ""))
+    logger.info("Lokale synchronisatie aangevraagd voor %s (richting=%s).", repo_name, direction)
+    message = sync_repository_locally(repo_name, direction)
+    record_user_activity("Softwareproject gesynchroniseerd", f"{repo_name} ({direction})")
     return api_success(message)
 
 

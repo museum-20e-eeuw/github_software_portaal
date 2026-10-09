@@ -191,6 +191,24 @@ function bindProjectDetail() {
         }
     });
 
+    for (const btn of document.querySelectorAll("#sync-pull-btn, #sync-push-btn")) {
+        btn.addEventListener("click", async () => {
+            const direction = btn.dataset.direction;
+            if (direction === "pull" && !window.confirm("Lokale wijzigingen en niet-gepushte commits gaan verloren. Doorgaan?")) {
+                return;
+            }
+            btn.disabled = true;
+            try {
+                const payload = await postJson(`/api/projects/${encodeURIComponent(repoName)}/sync`, { direction });
+                showToast(payload.message, false);
+                window.setTimeout(() => window.location.reload(), 600);
+            } catch (error) {
+                showToast(error.message, true);
+                btn.disabled = false;
+            }
+        });
+    }
+
     let deleteKeystrokes = 0;
     const deleteBackdrop = document.getElementById("delete-modal-backdrop");
     const deleteInput = document.getElementById("delete-confirm-input");

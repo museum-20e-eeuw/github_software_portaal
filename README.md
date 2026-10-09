@@ -53,6 +53,8 @@ Voer deze stappen uit vanuit de hoofdmap van deze repository.
 
 3. Start de app:
 
+   Dubbelklik op `start_portaal.bat`, of start de app vanuit PowerShell:
+
    ```powershell
    .\.venv\Scripts\python app.py
    ```

@@ -94,9 +94,25 @@
                         {% if local_status.ahead %}{{ local_status.ahead }} lokale commit(s) nog niet gepusht. {% endif %}
                         {% if local_status.has_local_changes %}Er zijn niet-opgeslagen lokale wijzigingen. {% endif %}
                     </p>
-                    {% if local_status.behind %}
-                        <button class="btn btn-warn" type="button" id="update-project-btn">Bijwerken naar GitHub-versie</button>
+                    {% if local_status.incoming_commits %}
+                        <strong>Op GitHub, nog niet lokaal:</strong>
+                        <ul>{% for line in local_status.incoming_commits %}<li><code>{{ line }}</code></li>{% endfor %}</ul>
                     {% endif %}
+                    {% if local_status.outgoing_commits %}
+                        <strong>Lokaal, nog niet op GitHub:</strong>
+                        <ul>{% for line in local_status.outgoing_commits %}<li><code>{{ line }}</code></li>{% endfor %}</ul>
+                    {% endif %}
+                    {% if local_status.remote_changed_files %}
+                        <strong>Bestandsverschillen met GitHub:</strong>
+                        <ul>{% for line in local_status.remote_changed_files %}<li><code>{{ line }}</code></li>{% endfor %}</ul>
+                    {% endif %}
+                    {% if local_status.changed_files %}
+                        <strong>Lokaal gewijzigde bestanden:</strong>
+                        <ul>{% for line in local_status.changed_files %}<li><code>{{ line }}</code></li>{% endfor %}</ul>
+                    {% endif %}
+                    <strong>Lokaal in sync brengen:</strong>
+                    <button class="btn btn-warn" type="button" id="sync-pull-btn" data-direction="pull">GitHub → lokaal (lokale wijzigingen gaan verloren)</button>
+                    <button class="btn btn-primary" type="button" id="sync-push-btn" data-direction="push"{% if local_status.behind %} disabled title="GitHub heeft nieuwere commits; haal die eerst binnen."{% endif %}>Lokaal → GitHub</button>
                 {% endif %}
             {% endif %}
         </div>
