@@ -1399,7 +1399,7 @@ textarea {
     height: 64px;
     margin: 16px 20px;
     border-radius: 14px;
-    animation: lightbar-float 5s ease-in-out infinite;
+    animation: lightbar-logo-teleport 7s ease-in-out infinite;
     filter: drop-shadow(0 0 12px rgba(231, 80, 30, 0.8));
 }
 
@@ -1466,9 +1466,12 @@ textarea {
     50% { opacity: 1; }
 }
 
-@keyframes lightbar-float {
-    0%, 100% { transform: translateY(0) rotate(-3deg) scale(1); }
-    50% { transform: translateY(-4px) rotate(3deg) scale(1.06); }
+@keyframes lightbar-logo-teleport {
+    0%, 70%, 100% { opacity: 1; transform: rotate(0) scale(1); }
+    76% { opacity: 0; transform: rotate(360deg) scale(0.15); }
+    80% { opacity: 0; transform: rotate(720deg) scale(0.15); }
+    86% { opacity: 1; transform: rotate(1080deg) scale(1.12); }
+    92% { transform: rotate(1080deg) scale(0.96); }
 }
 
 @media (prefers-reduced-motion: reduce) {

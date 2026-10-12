@@ -483,9 +483,15 @@ def run_system_checks() -> list[dict[str, Any]]:
     vscode_local = detect_vscode_version()
     arduino_local = detect_arduino_ide_version()
 
-    git_latest = fetch_latest_github_release("git-for-windows/git")
-    vscode_latest = fetch_latest_github_release("microsoft/vscode")
-    arduino_latest = fetch_latest_github_release("arduino/arduino-ide")
+    release_repositories = (
+        "git-for-windows/git",
+        "microsoft/vscode",
+        "arduino/arduino-ide",
+    )
+    with ThreadPoolExecutor(max_workers=len(release_repositories)) as pool:
+        git_latest, vscode_latest, arduino_latest = pool.map(
+            fetch_latest_github_release, release_repositories
+        )
 
     results = [
         build_system_check("Git", git_local, git_latest),
@@ -651,6 +657,26 @@ def is_repo_cloned_locally(repo_name: str) -> bool:
     return os.path.isdir(os.path.join(local_repo_path(repo_name), ".git"))
 
 
+LOCAL_GIT_FETCH_CACHE_SECONDS = 60
+LOCAL_GIT_FETCH_CACHE: dict[str, float] = {}
+LOCAL_GIT_FETCH_LOCKS: dict[str, threading.Lock] = {}
+LOCAL_GIT_FETCH_LOCKS_LOCK = threading.Lock()
+
+
+def local_git_fetch_lock(repo_name: str) -> tuple[str, threading.Lock]:
+    repo_path = os.path.abspath(local_repo_path(repo_name))
+    with LOCAL_GIT_FETCH_LOCKS_LOCK:
+        lock = LOCAL_GIT_FETCH_LOCKS.setdefault(repo_path, threading.Lock())
+    return repo_path, lock
+
+
+def invalidate_local_git_fetch_cache(repo_name: str) -> None:
+    repo_path, lock = local_git_fetch_lock(repo_name)
+    with lock:
+        with LOCAL_GIT_FETCH_LOCKS_LOCK:
+            LOCAL_GIT_FETCH_CACHE.pop(repo_path, None)
+
+
 def add_local_project_paths(repositories: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Vul repositorygegevens aan met het lokale pad en de kloonstatus."""
     root = workspace_root()
@@ -767,7 +793,7 @@ def run_git(repo_name: str, args: list[str], timeout: int = 30) -> subprocess.Co
     return result
 
 
-def get_local_git_status(repo_name: str) -> dict[str, Any]:
+def get_local_git_status(repo_name: str, refresh_remote: bool = False) -> dict[str, Any]:
     """Bepaalt of de lokale kopie bestaat, en of die in sync is met github.com."""
     if not is_repo_cloned_locally(repo_name):
         return {
@@ -780,10 +806,23 @@ def get_local_git_status(repo_name: str) -> dict[str, Any]:
             "changed_files": [],
         }
 
-    try:
-        run_git(repo_name, ["fetch", "--quiet", "origin"], timeout=30)
-    except (OSError, subprocess.SubprocessError) as exc:
-        logger.warning("Remote status ophalen mislukt voor %s (%s).", repo_name, type(exc).__name__)
+    cache_key, fetch_lock = local_git_fetch_lock(repo_name)
+    with fetch_lock:
+        with LOCAL_GIT_FETCH_LOCKS_LOCK:
+            fetch_is_recent = (
+                time.monotonic() - LOCAL_GIT_FETCH_CACHE.get(cache_key, 0)
+                < LOCAL_GIT_FETCH_CACHE_SECONDS
+            )
+        if refresh_remote or not fetch_is_recent:
+            try:
+                run_git(repo_name, ["fetch", "--quiet", "origin"], timeout=30)
+            except (OSError, subprocess.SubprocessError) as exc:
+                logger.warning("Remote status ophalen mislukt voor %s (%s).", repo_name, type(exc).__name__)
+            finally:
+                with LOCAL_GIT_FETCH_LOCKS_LOCK:
+                    LOCAL_GIT_FETCH_CACHE[cache_key] = time.monotonic()
+        else:
+            logger.debug("Remote Git-status uit cache voor %s.", repo_name)
 
     branch_result = run_git(repo_name, ["rev-parse", "--abbrev-ref", "HEAD"])
     local_branch = branch_result.stdout.strip() if branch_result.returncode == 0 else None
@@ -843,7 +882,7 @@ def sync_state_label(status: dict[str, Any]) -> str:
 
 def sync_repository_locally(repo_name: str, direction: str) -> str:
     """Breng de lokale map gelijk met GitHub (direction 'pull'). Pushen verloopt via de commit-route."""
-    status = get_local_git_status(repo_name)
+    status = get_local_git_status(repo_name, refresh_remote=True)
     branch = status["local_branch"]
     if not status["cloned"] or not branch:
         raise GitHubApiError(400, "Dit project staat niet (correct) lokaal.")
@@ -854,6 +893,7 @@ def sync_repository_locally(repo_name: str, direction: str) -> str:
         clean = run_git(repo_name, ["clean", "-fd"], timeout=60)
         if clean.returncode != 0:
             raise GitHubApiError(500, f"Opschonen is mislukt: {clean.stderr.strip() or clean.stdout.strip()}")
+        invalidate_local_git_fetch_cache(repo_name)
         return "Lokale map is gelijkgetrokken met GitHub."
     raise GitHubApiError(400, "Onbekende synchronisatierichting.")
 
@@ -875,6 +915,7 @@ def clone_repository_locally(repo_name: str, clone_url: str, token: str) -> None
     if result.returncode != 0:
         logger.error("Klonen mislukt voor %s (exitcode %s).", repo_name, result.returncode)
         raise GitHubApiError(500, f"Klonen is mislukt: {result.stderr.strip() or result.stdout.strip()}")
+    invalidate_local_git_fetch_cache(repo_name)
     logger.info("Repository lokaal gekloond: %s.", repo_name)
 
 
@@ -889,6 +930,7 @@ def update_repository_locally(repo_name: str, default_branch: str) -> str:
     if reset.returncode != 0:
         logger.error("Bijwerken van %s mislukt: %s", repo_name, reset.stderr.strip() or reset.stdout.strip())
         raise GitHubApiError(500, f"Bijwerken is mislukt: {reset.stderr.strip() or reset.stdout.strip()}")
+    invalidate_local_git_fetch_cache(repo_name)
     logger.info("Lokale repository bijgewerkt: %s.", repo_name)
     return reset.stdout.strip() or "Lokale map is bijgewerkt."
 
@@ -1060,7 +1102,7 @@ def commit_and_push_changes(
     if commit_result.returncode != 0:
         combined = f"{commit_result.stdout}\n{commit_result.stderr}".strip()
         if "nothing to commit" in combined.lower():
-            if not get_local_git_status(repo_name)["ahead"]:
+            if not get_local_git_status(repo_name, refresh_remote=True)["ahead"]:
                 raise GitHubApiError(400, "Er zijn geen wijzigingen om in te checken.")
         else:
             raise GitHubApiError(500, f"Commit is mislukt: {combined}")
@@ -1068,6 +1110,7 @@ def commit_and_push_changes(
     push_result = run_git(repo_name, ["push", "origin", f"HEAD:{default_branch}"], timeout=60)
     if push_result.returncode != 0:
         raise GitHubApiError(500, f"Push is mislukt: {push_result.stderr.strip() or push_result.stdout.strip()}")
+    invalidate_local_git_fetch_cache(repo_name)
 
     notes = f"{summary}\n\nDoor: {author_name}"
     release_message = create_github_release(token, repo_name, version, default_branch, notes)
@@ -1520,9 +1563,17 @@ def logout():
 @app.route("/dashboard")
 @require_login
 def dashboard():
-    repos = get_org_repositories(g.auth.token)
-    pulls = get_org_pull_requests(g.auth.token)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        repos_future = pool.submit(get_org_repositories, g.auth.token)
+        pulls_future = pool.submit(get_org_pull_requests, g.auth.token)
+        repos = repos_future.result()
+        pulls = pulls_future.result()
     active_work = build_active_work(pulls)
+    LIGHTBAR_CACHE.update(
+        key=(g.auth.username, current_org()),
+        checked_at=time.time(),
+        data={"repo_count": len(repos), "active_work": active_work[:6]},
+    )
 
     active_repo_names = {item["repo_name"] for item in active_work if item["repo_name"]}
     repos_with_work = [repo for repo in repos if repo["name"] in active_repo_names]

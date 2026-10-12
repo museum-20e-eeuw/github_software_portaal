@@ -5,6 +5,7 @@ Een lokale webapp voor medewerkers van Museum van de 20ste Eeuw om softwareproje
 ## Functies
 
 - Dashboard met repositories, recente activiteit en lopend werk.
+- De externe synchronisatiestatus van lokale projecten wordt maximaal 60 seconden gecachet; lokale wijzigingen worden bij iedere controle opnieuw gelezen.
 - Meldingenwidget met recente acties in de huidige browsersessie.
 - Repositories, pull requests, issues, branches en GitHub Actions-workflows bekijken.
 - Issues aanmaken en sluiten; pull requests mergen; workflows opnieuw starten of annuleren.
