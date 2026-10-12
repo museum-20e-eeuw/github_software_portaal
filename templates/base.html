@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="{{ url_for('static', filename='app.css', v=11) }}" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='app.css', v=15) }}" />
 </head>
 <body>
     <div class="background-glow glow-a"></div>
@@ -114,6 +114,17 @@
                                 </span>
                                 <span class="system-check-message">{{ check.message }}</span>
                             </span>
+                            {% if check.name == "Git" and check.level == "warning" and current_user %}
+                                <form class="system-check-update-form"
+                                      method="post"
+                                      action="{{ url_for('update_git') }}"
+                                      data-api-form="true"
+                                      data-reload="true"
+                                      data-reload-on-error="true"
+                                      data-busy-label="Git wordt bijgewerkt...">
+                                    <button class="btn btn-primary btn-small" type="submit">Git bijwerken</button>
+                                </form>
+                            {% endif %}
                         </li>
                     {% endfor %}
                 </ul>
@@ -146,10 +157,11 @@
                 {% endif %}
             </div>
             <div class="lightbar-segment lightbar-messages" id="activity-panel" aria-live="polite">
-                <span class="eyebrow">Berichten · {{ current_user or default_username }} · {{ user_activity|length }} {% if user_activity|length == 1 %}actie{% else %}acties{% endif %}</span>
+                {% set message_count = user_activity|length %}
+                <span class="eyebrow">Berichten · {{ current_user or default_username }} · {{ message_count }} {% if message_count == 1 %}bericht{% else %}berichten{% endif %}</span>
                 {% if user_activity %}
                     <ol class="lightbar-list">
-                        {% for item in user_activity[:3] %}
+                        {% for item in user_activity %}
                             <li>
                                 <strong>{{ item.action }}</strong>
                                 {% if item.detail %}<span class="muted">{{ item.detail }}</span>{% endif %}
@@ -201,6 +213,6 @@
             document.addEventListener('keydown', function (e) { if (e.key === 'Escape') set(false); });
         })();
     </script>
-    <script src="{{ url_for('static', filename='app.js') }}"></script>
+    <script src="{{ url_for('static', filename='app.js', v=3) }}"></script>
 </body>
 </html>

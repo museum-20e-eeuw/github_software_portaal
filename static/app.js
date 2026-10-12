@@ -43,10 +43,29 @@ function bindApiForms() {
     for (const form of apiForms) {
         form.addEventListener("submit", async (event) => {
             event.preventDefault();
+            const busyLabel = form.dataset.busyLabel;
+            const busyButton = busyLabel
+                ? form.querySelector("button[type='submit']")
+                : null;
+            const originalButtonText = busyButton?.textContent;
+            if (busyButton) {
+                busyButton.disabled = true;
+                busyButton.textContent = busyLabel || "Bezig...";
+            }
             try {
                 await submitApiForm(form);
             } catch (error) {
                 showToast(error.message || "Actie mislukt.", true);
+                if (form.dataset.reloadOnError === "true") {
+                    window.setTimeout(() => {
+                        window.location.reload();
+                    }, 700);
+                }
+            } finally {
+                if (busyButton) {
+                    busyButton.disabled = false;
+                    busyButton.textContent = originalButtonText;
+                }
             }
         });
     }

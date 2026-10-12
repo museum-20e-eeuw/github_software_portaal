@@ -463,6 +463,7 @@ textarea {
 }
 
 .btn-small {
+    min-height: 34px;
     padding: 6px 12px;
     font-size: 0.78rem;
 }
@@ -478,6 +479,7 @@ textarea {
 
 .system-check-item {
     display: flex;
+    flex-wrap: wrap;
     align-items: flex-start;
     gap: 12px;
     font-size: 0.88rem;
@@ -516,6 +518,10 @@ textarea {
 .system-check-version {
     font-size: 0.78rem;
     color: var(--ink-soft);
+}
+
+.system-check-update-form {
+    margin: 0 0 0 42px;
 }
 
 .system-check-message {
@@ -659,7 +665,7 @@ main {
 .list-card:hover,
 .nav-link:hover,
 .sub-link:hover,
-.btn:hover {
+.btn:not(:disabled):hover {
     transform: translateY(-2px);
 }
 
@@ -811,16 +817,29 @@ textarea {
 }
 
 .btn {
+    width: fit-content;
+    max-width: 100%;
+    min-height: 42px;
+    justify-self: start;
     border: 1px solid transparent;
-    padding: 11px 16px;
+    padding: 10px 16px;
     cursor: pointer;
     text-decoration: none;
     font-weight: 700;
+    line-height: 1.25;
+    text-align: center;
+    box-shadow: 0 2px 8px rgba(46, 42, 67, 0.1);
 }
 
 .btn-primary {
     background: var(--accent);
+    border-color: var(--accent);
     color: #fffaf3;
+}
+
+.btn-primary:not(:disabled):hover {
+    background: var(--accent-dark);
+    border-color: var(--accent-dark);
 }
 
 .btn-ghost {
@@ -829,10 +848,21 @@ textarea {
     color: var(--ink);
 }
 
+.btn-ghost:not(:disabled):hover {
+    background: var(--accent-soft);
+    border-color: rgba(231, 80, 30, 0.3);
+    color: var(--accent-dark);
+}
+
 .btn-warn {
     background: rgba(130, 74, 31, 0.12);
     border-color: rgba(130, 74, 31, 0.2);
     color: var(--warn);
+}
+
+.btn-warn:not(:disabled):hover {
+    background: rgba(130, 74, 31, 0.2);
+    border-color: rgba(130, 74, 31, 0.34);
 }
 
 .btn-danger {
@@ -841,9 +871,20 @@ textarea {
     color: #fff;
 }
 
-.btn-danger:disabled {
-    opacity: 0.45;
+.btn-danger:not(:disabled):hover {
+    background: #861b1b;
+    border-color: #861b1b;
+}
+
+.btn:focus-visible {
+    outline: 3px solid rgba(231, 80, 30, 0.35);
+    outline-offset: 2px;
+}
+
+.btn:disabled {
+    opacity: 0.5;
     cursor: not-allowed;
+    box-shadow: none;
 }
 
 .danger-zone {
@@ -1391,6 +1432,29 @@ textarea {
 }
 
 .lightbar-list time { display: block; font-size: 12px; }
+
+.lightbar-messages .lightbar-list {
+    max-height: 150px;
+    overflow-y: auto;
+    padding-right: 8px;
+    scrollbar-color: rgba(255, 210, 122, 0.7) rgba(255, 250, 243, 0.12);
+    scrollbar-width: thin;
+}
+
+.lightbar-messages .lightbar-list::-webkit-scrollbar {
+    width: 8px;
+}
+
+.lightbar-messages .lightbar-list::-webkit-scrollbar-track {
+    border-radius: 999px;
+    background: rgba(255, 250, 243, 0.12);
+}
+
+.lightbar-messages .lightbar-list::-webkit-scrollbar-thumb {
+    border: 2px solid #3b3557;
+    border-radius: 999px;
+    background: rgba(255, 210, 122, 0.7);
+}
 
 @keyframes lightbar-sweep {
     from { background-position: 200% 0; }

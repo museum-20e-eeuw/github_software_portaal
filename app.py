@@ -267,6 +267,8 @@ app.jinja_env.filters["datetime_relative"] = format_relative_datetime
 SYSTEM_CHECK_CACHE_SECONDS = 60 * 30
 SYSTEM_CHECK_LOCK = threading.Lock()
 SYSTEM_CHECK_CACHE: dict[str, Any] = {"checked_at": 0.0, "results": []}
+GIT_UPDATE_LOCK = threading.Lock()
+WINGET_NO_UPGRADE_EXIT_CODE = 0x8A15002B
 
 VERSION_TAG_PATTERN = re.compile(r"\d+(?:\.\d+)+")
 NUMERIC_VERSION_PATTERN = re.compile(r"(v?)(\d+(?:\.\d+)*)", re.IGNORECASE)
@@ -1411,6 +1413,7 @@ def get_lightbar_data() -> dict[str, Any]:
 @app.context_processor
 def inject_template_context():
     """Deel algemene app-, gebruiker- en systeemgegevens met templates."""
+    system_checks = get_system_check_results()
     return {
         "app_name": APP_CONFIG["app_name"],
         "organization": current_org(),
@@ -1419,7 +1422,7 @@ def inject_template_context():
         "now_time": datetime.now().strftime("%H:%M"),
         "nav_items": get_nav_items(),
         "current_user": g.auth.username if g.auth else None,
-        "system_checks": get_system_check_results(),
+        "system_checks": system_checks,
         "user_activity": get_user_activity(),
         "lightbar": get_lightbar_data(),
     }
@@ -1925,6 +1928,120 @@ def refresh_system_checks():
         SYSTEM_CHECK_CACHE["checked_at"] = 0.0
     results = get_system_check_results()
     return api_success("Systeemcontrole vernieuwd.", checks=results)
+
+
+@app.post("/api/system-checks/update-git")
+@require_login
+def update_git():
+    if not GIT_UPDATE_LOCK.acquire(blocking=False):
+        return api_error("Er wordt al een Git-update uitgevoerd.", 409)
+
+    def failed_update(message: str, status_code: int):
+        record_user_activity("Git-update mislukt", message)
+        return api_error(message, status_code)
+
+    try:
+        checks = get_system_check_results()
+        git_check = next((check for check in checks if check["name"] == "Git"), None)
+        if not git_check or git_check["level"] != "warning":
+            return api_error("Systeemcontrole meldt geen beschikbare Git-update.", 409)
+
+        winget = shutil.which("winget")
+        if not winget:
+            return failed_update(
+                "Git kon niet worden bijgewerkt: winget is niet beschikbaar.",
+                503,
+            )
+
+        current_version = detect_git_version()
+        latest_version = git_check["latest_version"]
+        if not current_version or compare_versions(current_version, latest_version) != "outdated":
+            return failed_update(
+                "Git kon niet worden bijgewerkt: de huidige versie kon niet worden gecontroleerd. "
+                "Voer de systeemcontrole opnieuw uit.",
+                409,
+            )
+
+        try:
+            result = run_hidden(
+                [
+                    winget,
+                    "upgrade",
+                    "--id",
+                    "Git.Git",
+                    "--exact",
+                    "--source",
+                    "winget",
+                    "--silent",
+                    "--accept-source-agreements",
+                    "--accept-package-agreements",
+                    "--disable-interactivity",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=600,
+            )
+        except subprocess.TimeoutExpired:
+            logger.error("Git-update via winget liep vast na 10 minuten.")
+            return failed_update(
+                "De Git-update duurde langer dan 10 minuten en is afgebroken.",
+                504,
+            )
+        except OSError as exc:
+            logger.error("Git-update via winget kon niet worden gestart (%s).", type(exc).__name__)
+            return failed_update("Winget kon niet worden gestart om Git bij te werken.", 500)
+
+        output = (result.stderr or result.stdout or "").strip()
+        combined_output = f"{result.stdout or ''}\n{result.stderr or ''}".lower()
+        no_upgrade_in_winget = (
+            result.returncode & 0xFFFFFFFF == WINGET_NO_UPGRADE_EXIT_CODE
+            or "no available upgrade found" in combined_output
+            or "no newer package versions are available" in combined_output
+        )
+        if result.returncode != 0 and no_upgrade_in_winget:
+            logger.info("Winget heeft nog geen nieuwere Git-versie dan %s.", current_version)
+            return failed_update(
+                f"Er is nog geen nieuwere Git-versie beschikbaar via winget (geïnstalleerd: {current_version}, "
+                f"laatste release op GitHub: {latest_version}). Probeer het later opnieuw.",
+                409,
+            )
+        if result.returncode != 0:
+            logger.error(
+                "Git-update via winget mislukt (exitcode %s): %s",
+                result.returncode,
+                output[:1000],
+            )
+            message = "Winget kon Git niet bijwerken."
+            if output:
+                message = f"{message} {output[:500]}"
+            return failed_update(message, 500)
+
+        updated_version = detect_git_version()
+        if not updated_version or updated_version == current_version:
+            logger.error("Winget eindigde zonder een aantoonbare Git-update.")
+            return failed_update(
+                "Winget heeft geen Git-update uitgevoerd. Mogelijk wordt Git niet via winget beheerd.",
+                409,
+            )
+
+        with SYSTEM_CHECK_LOCK:
+            SYSTEM_CHECK_CACHE["checked_at"] = 0.0
+        record_user_activity(
+            "Git bijgewerkt",
+            f"Versie {current_version} → {updated_version}",
+        )
+        logger.info("Git bijgewerkt van %s naar %s via winget.", current_version, updated_version)
+        if compare_versions(updated_version, latest_version) == "outdated":
+            return api_success(
+                f"Git is bijgewerkt naar {updated_version}, maar de nieuwste release ({latest_version}) is nog niet beschikbaar via winget.",
+                local_version=updated_version,
+            )
+        return api_success(
+            f"Git is bijgewerkt van {current_version} naar {updated_version}.",
+            local_version=updated_version,
+        )
+    finally:
+        GIT_UPDATE_LOCK.release()
 
 
 # ---------------------------------------------------------------------------
