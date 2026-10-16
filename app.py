@@ -1,6 +1,6 @@
 """Museum GitHub Balie: Flask-webapp voor GitHub-beheer door museummedewerkers.
 
-Applicatie: Museum GitHub Balie
+Applicatie: Museum GitHub Balie ...
 Beschrijving: Beheer repositories, pull requests, issues en workflows voor
     Museum van de 20ste Eeuw.
 Onderdeel: Hoofdapplicatie en GitHub API-koppeling
