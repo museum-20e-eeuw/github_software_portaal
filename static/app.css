@@ -575,6 +575,136 @@ main {
     margin-top: 22px;
 }
 
+.dashboard-actions,
+.dashboard-view-toggle {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.dashboard-view-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+}
+
+.dashboard-view-button.active {
+    border-color: var(--accent);
+    color: var(--accent-dark);
+    background: var(--accent-soft);
+}
+
+.dashboard-view[hidden] {
+    display: none;
+}
+
+.dashboard-project-table {
+    width: 100%;
+    min-width: 0;
+    table-layout: fixed;
+}
+
+.dashboard-table-view {
+    overflow-x: hidden;
+}
+
+.dashboard-project-table th,
+.dashboard-project-table td {
+    padding: 8px 6px;
+    overflow-wrap: anywhere;
+    word-break: normal;
+    font-size: 0.78rem;
+}
+
+.dashboard-project-table thead th:nth-child(1) { width: 13%; }
+.dashboard-project-table thead th:nth-child(2) { width: 17%; }
+.dashboard-project-table thead th:nth-child(3) { width: 8%; }
+.dashboard-project-table thead th:nth-child(4) { width: 7%; }
+.dashboard-project-table thead th:nth-child(5) { width: 7%; }
+.dashboard-project-table thead th:nth-child(6) { width: 17%; }
+.dashboard-project-table thead th:nth-child(7) { width: 16%; }
+.dashboard-project-table thead th:nth-child(8) { width: 15%; }
+
+.dashboard-project-table code {
+    white-space: normal;
+}
+
+.dashboard-project-table tbody tr:hover {
+    background: rgba(231, 80, 30, 0.06);
+}
+
+.dashboard-project-table tbody th {
+    text-align: left;
+}
+
+.dashboard-project-table tbody th a {
+    color: var(--accent-dark);
+    font-weight: 700;
+}
+
+@media (max-width: 760px) {
+    .dashboard-project-table,
+    .dashboard-project-table tbody,
+    .dashboard-project-table tr,
+    .dashboard-project-table th,
+    .dashboard-project-table td {
+        display: block;
+        width: 100%;
+    }
+
+    .dashboard-project-table thead {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        clip-path: inset(50%);
+    }
+
+    .dashboard-project-table tbody {
+        display: grid;
+        gap: 12px;
+    }
+
+    .dashboard-project-table tbody tr {
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--surface);
+    }
+
+    .dashboard-project-table tbody th,
+    .dashboard-project-table tbody td {
+        display: flex;
+        align-items: start;
+        gap: 10px;
+        padding: 8px 10px;
+        text-align: left;
+        white-space: normal;
+    }
+
+    .dashboard-project-table tbody th::before,
+    .dashboard-project-table tbody td::before {
+        content: attr(data-label);
+        flex: 0 0 7.5rem;
+        color: var(--ink-soft);
+        font-weight: 700;
+    }
+
+    .dashboard-project-table tbody tr > :not(:last-child) {
+        border-bottom: 1px solid rgba(46, 42, 67, 0.08);
+    }
+}
+
+@media (max-width: 400px) {
+    .dashboard-project-table tbody th::before,
+    .dashboard-project-table tbody td::before {
+        flex-basis: 6.25rem;
+    }
+}
 
 .stats-grid,
 .card-grid {
@@ -700,6 +830,11 @@ main {
 .version-table td:nth-child(1),
 .version-table td:nth-child(2) {
     white-space: nowrap;
+}
+
+.dashboard-project-table td:nth-child(1),
+.dashboard-project-table td:nth-child(2) {
+    white-space: normal;
 }
 
 .version-summary {
@@ -1305,12 +1440,36 @@ textarea {
 
     .modal-panel {
         width: min(480px, 100%);
-        max-height: 90vh;
-        overflow-y: auto;
+        max-height: 96vh;
+        overflow: hidden;
+        gap: 10px;
+        padding: 16px 20px;
+    }
+
+    .modal-panel .panel-head,
+    .modal-panel label {
+        margin: 0;
+    }
+
+    .modal-panel #commit-changed-files {
+        margin: 0;
+        overflow: hidden;
+        overflow-wrap: anywhere;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        line-clamp: 2;
+        -webkit-box-orient: vertical;
+    }
+
+    .modal-panel input,
+    .modal-panel textarea {
+        width: 100%;
+        box-sizing: border-box;
     }
 
     .modal-panel textarea {
-        resize: vertical;
+        resize: none;
+        overflow: hidden;
         font-family: inherit;
     }
 
@@ -1433,29 +1592,6 @@ textarea {
 
 .lightbar-list time { display: block; font-size: 12px; }
 
-.lightbar-messages .lightbar-list {
-    max-height: 150px;
-    overflow-y: auto;
-    padding-right: 8px;
-    scrollbar-color: rgba(255, 210, 122, 0.7) rgba(255, 250, 243, 0.12);
-    scrollbar-width: thin;
-}
-
-.lightbar-messages .lightbar-list::-webkit-scrollbar {
-    width: 8px;
-}
-
-.lightbar-messages .lightbar-list::-webkit-scrollbar-track {
-    border-radius: 999px;
-    background: rgba(255, 250, 243, 0.12);
-}
-
-.lightbar-messages .lightbar-list::-webkit-scrollbar-thumb {
-    border: 2px solid #3b3557;
-    border-radius: 999px;
-    background: rgba(255, 210, 122, 0.7);
-}
-
 @keyframes lightbar-sweep {
     from { background-position: 200% 0; }
     to { background-position: -200% 0; }
@@ -1574,6 +1710,7 @@ textarea {
     .hero-menu {
         display: none; position: absolute; top: 100%; right: 8px; z-index: 40;
         flex-direction: column; align-items: stretch; gap: 10px; min-width: 220px;
+        width: min(360px, calc(100vw - 16px)); max-height: min(75vh, 620px); overflow-y: auto;
         padding: 12px; border-radius: 16px;
         background: rgba(46, 42, 67, 0.98); box-shadow: var(--shadow);
     }
@@ -1619,6 +1756,32 @@ textarea {
 .hero-menu-item:hover, .hero-menu-item.active { background: rgba(255, 250, 243, 0.14); }
 .hero-menu-icon { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; flex: none; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
 .system-check-trigger { width: 100%; text-align: left; cursor: pointer; }
+.hero-menu-message-list { display: grid; gap: 8px; max-height: 180px; overflow-y: auto; margin: 8px 0 0; padding: 0 8px 0 0; list-style: none; scrollbar-color: rgba(255, 210, 122, 0.7) rgba(255, 250, 243, 0.12); scrollbar-width: thin; }
+.hero-menu-message-list time { margin-top: 2px; font-size: 0.75rem; }
+.hero-menu-message-list::-webkit-scrollbar { width: 8px; }
+.hero-menu-message-list::-webkit-scrollbar-track { border-radius: 999px; background: rgba(255, 250, 243, 0.12); }
+.hero-menu-message-list::-webkit-scrollbar-thumb { border: 2px solid #3b3557; border-radius: 999px; background: rgba(255, 210, 122, 0.7); }
+.menu-window-dialog { width: min(900px, calc(100% - 32px)); max-width: 900px; height: min(820px, calc(100% - 32px)); max-height: 90vh; margin: auto; padding: 18px; overflow: hidden; border: 1px solid var(--line); border-radius: 20px; color: var(--ink); background: var(--surface-strong); box-shadow: var(--shadow); }
+.menu-window-dialog:not([open]) { display: none; }
+.menu-window-dialog[open] { display: flex; flex-direction: column; }
+.menu-window-dialog::backdrop { background: rgba(46, 42, 67, 0.6); backdrop-filter: blur(3px); }
+.menu-window-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 40px; margin-bottom: 12px; }
+.menu-window-head h2 { margin: 0; font-family: "Space Grotesk", "Segoe UI", sans-serif; font-size: 1.35rem; }
+.menu-window-dialog iframe { flex: 1; min-height: 0; width: 100%; border: 0; border-radius: 12px; background: var(--bg); }
+.menu-window-dialog iframe[hidden],
+.menu-window-activity[hidden] { display: none; }
+.menu-window-activity { flex: 1; min-height: 0; overflow-y: auto; padding: 16px; border-radius: 12px; color: #fff7ef; background: linear-gradient(135deg, #2e2a43, #4a3550); }
+.menu-window-activity .eyebrow { color: #ffd27a; }
+.menu-window-activity .muted { display: block; color: rgba(255, 250, 243, 0.65); }
+.menu-window-activity .hero-menu-message-list { max-height: none; }
+body.menu-window-view { min-height: 100%; background: var(--bg); }
+.menu-window-view .background-glow,
+.menu-window-view .hero,
+.menu-window-view .lightbar,
+.menu-window-view .sub-nav,
+.menu-window-view .system-check-dialog { display: none; }
+.menu-window-view .shell { max-width: none; margin: 0; padding: 14px; }
+.menu-window-view main { margin: 0; }
 
 .system-check-dialog {
     width: min(620px, calc(100% - 32px));

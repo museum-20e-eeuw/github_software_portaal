@@ -72,7 +72,6 @@
                                     <strong>{{ repo.name }}</strong>
                                     <span>{{ repo.description or "Geen beschrijving beschikbaar." }}</span>
                                 </span>
-                                <span class="status-chip">{{ repo.visibility }}</span>
                             </label>
                         {% endfor %}
                     </div>
@@ -108,13 +107,6 @@
                 <label>
                     Beschrijving
                     <input type="text" name="description" value="{{ values.get('description', '') }}" maxlength="350" placeholder="Korte omschrijving van het project" />
-                </label>
-                <label>
-                    GitHub-zichtbaarheid
-                    <select name="visibility">
-                        <option value="private" {% if values.get('visibility', 'private') == 'private' %}selected{% endif %}>Prive</option>
-                        <option value="public" {% if values.get('visibility') == 'public' %}selected{% endif %}>Openbaar</option>
-                    </select>
                 </label>
                 <p class="muted">Lokale map: <code id="new-project-path">{{ workspace_root }}\{{ values.get('name', 'projectnaam') }}</code></p>
                 <div class="action-row">

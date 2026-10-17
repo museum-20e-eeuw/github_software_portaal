@@ -16,7 +16,7 @@
             submap <code>logging</code> opgeslagen.
         </p>
 
-        <form method="post" action="{{ url_for('settings_page') }}" class="stack" id="settings-form">
+        <form method="post" action="{{ url_for('settings_page', window='1' if request.args.get('window') == '1' else None) }}" class="stack" id="settings-form">
             <label>
                 Map voor lokale projecten
                 <div class="folder-picker-row">
@@ -49,7 +49,9 @@
 
             <div class="action-row">
                 <button class="btn btn-primary" type="submit">Opslaan</button>
-                <a class="btn btn-ghost" href="{{ url_for('dashboard') }}">Annuleren</a>
+                {% if request.args.get('window') != '1' %}
+                    <a class="btn btn-ghost" href="{{ url_for('dashboard') }}">Annuleren</a>
+                {% endif %}
             </div>
         </form>
     </article>

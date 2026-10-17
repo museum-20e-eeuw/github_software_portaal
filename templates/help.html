@@ -7,7 +7,9 @@
             <span class="eyebrow">Hulp bij het softwareportaal</span>
             <h2>Projecten beheren, stap voor stap</h2>
         </div>
-        <a class="btn btn-ghost" href="{{ url_for('dashboard') }}">Naar projecten</a>
+        {% if request.args.get('window') != '1' %}
+            <a class="btn btn-ghost" href="{{ url_for('dashboard') }}">Naar projecten</a>
+        {% endif %}
     </div>
     <p class="muted">
         Dit portaal helpt je softwareprojecten op GitHub te bekijken, lokaal te openen en te delen.
@@ -48,7 +50,7 @@
             <li>Klik op <strong>Nieuw softwareproject</strong>.</li>
             <li>Kies een leeg Python- of Arduino-project, of maak een kopie van een bestaand project.</li>
             <li>Geef het project een naam en eventueel een beschrijving.</li>
-            <li>Kies of het project alleen voor het team bedoeld is (<strong>Privé</strong>) of voor iedereen zichtbaar mag zijn (<strong>Openbaar</strong>).</li>
+            <li>Nieuwe softwareprojecten worden standaard privé op GitHub aangemaakt.</li>
             <li>Klik op <strong>Project maken en naar GitHub pushen</strong>. Het portaal maakt het project op deze computer én op GitHub aan.</li>
         </ol>
         <p class="muted">

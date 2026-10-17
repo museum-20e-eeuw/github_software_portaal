@@ -2,6 +2,11 @@
 
 {% block content %}
 
+{% macro sync_status(repo) -%}
+    {% if repo.sync_state == "in_sync" %}✅ Lokaal in sync met GitHub
+    {% elif repo.sync_state == "out_of_sync" %}⚠️ Lokaal niet in sync met GitHub
+    {% else %}Nog niet lokaal opgehaald{% endif %}
+{%- endmacro %}
 
 <section class="content-grid dashboard-content">
     <article class="panel">
@@ -10,15 +15,34 @@
                 <span class="eyebrow">Werk starten</span>
                 <h2>Kies een softwareproject</h2>
             </div>
-            <a class="btn btn-primary" href="{{ url_for('app_new.create_project') }}">Nieuw softwareproject</a>
+            <div class="dashboard-actions">
+                <div class="dashboard-view-toggle" role="group" aria-label="Weergave softwareprojecten">
+                    <button class="btn btn-ghost dashboard-view-button active" type="button" data-view="cards" aria-label="Kaartweergave" title="Kaartweergave" aria-pressed="true" aria-controls="dashboard-card-view">
+                        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <rect x="3" y="3" width="8" height="8" rx="1.5" />
+                            <rect x="13" y="3" width="8" height="8" rx="1.5" />
+                            <rect x="3" y="13" width="8" height="8" rx="1.5" />
+                            <rect x="13" y="13" width="8" height="8" rx="1.5" />
+                        </svg>
+                        Kaarten
+                    </button>
+                    <button class="btn btn-ghost dashboard-view-button" type="button" data-view="table" aria-label="Tabelweergave" title="Tabelweergave" aria-pressed="false" aria-controls="dashboard-table-view">
+                        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <rect x="3" y="4" width="18" height="16" rx="2" />
+                            <path d="M3 10h18M9 4v16M15 10v10" />
+                        </svg>
+                        Tabel
+                    </button>
+                </div>
+                <a class="btn btn-primary" href="{{ url_for('app_new.create_project') }}">Nieuw softwareproject</a>
+            </div>
         </div>
 
-        <div class="card-grid dashboard-repo-grid">
+        <div class="card-grid dashboard-repo-grid dashboard-view" id="dashboard-card-view">
             {% for repo in repositories %}
                 <a class="repo-card" href="{{ url_for('project_detail', repo_name=repo.name) }}">
                     <div class="repo-card-head">
                         <h3>{{ repo.name }}</h3>
-                        <span class="status-chip">{{ repo.visibility }}</span>
                     </div>
                     <p>{{ repo.description or "Geen beschrijving beschikbaar." }}</p>
                     <div class="meta-row">
@@ -32,14 +56,43 @@
                     <div class="local-project-path">
                         <span class="eyebrow">Lokale directory</span>
                         <code title="{{ repo.local_path }}">{{ repo.local_path }}</code>
-                        <span class="muted">
-                            {% if repo.sync_state == "in_sync" %}✅ Lokaal in sync met GitHub
-                            {% elif repo.sync_state == "out_of_sync" %}⚠️ Lokaal niet in sync met GitHub
-                            {% else %}Nog niet lokaal opgehaald{% endif %}
-                        </span>
+                        <span class="muted">{{ sync_status(repo) }}</span>
                     </div>
                 </a>
             {% endfor %}
+        </div>
+
+        <div class="table-wrap dashboard-view" id="dashboard-table-view" hidden>
+            <table class="version-table dashboard-project-table">
+                <thead>
+                    <tr>
+                        <th scope="col">Project</th>
+                        <th scope="col">Beschrijving</th>
+                        <th scope="col">Taal</th>
+                        <th scope="col">Open items</th>
+                        <th scope="col">Versie</th>
+                        <th scope="col">Laatste wijziging</th>
+                        <th scope="col">Lokale directory</th>
+                        <th scope="col">Synchronisatie</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for repo in repositories %}
+                        <tr>
+                            <th scope="row" data-label="Project">
+                                <a href="{{ url_for('project_detail', repo_name=repo.name) }}">{{ repo.name }}</a>
+                            </th>
+                            <td data-label="Beschrijving">{{ repo.description or "Geen beschrijving beschikbaar." }}</td>
+                            <td data-label="Taal">{{ repo.language or "Onbekend" }}</td>
+                            <td data-label="Open items">{{ repo.open_issues_count }}</td>
+                            <td data-label="Versie">{{ repo.version or "-" }}</td>
+                            <td data-label="Laatste wijziging">{{ repo.last_commit_author or "-" }} · {{ repo.last_commit_at|datetime_full }}</td>
+                            <td data-label="Lokale directory"><code title="{{ repo.local_path }}">{{ repo.local_path }}</code></td>
+                            <td data-label="Synchronisatie">{{ sync_status(repo) }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
     </article>
 </section>

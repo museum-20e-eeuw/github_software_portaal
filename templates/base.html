@@ -7,9 +7,9 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="{{ url_for('static', filename='app.css', v=15) }}" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='app.css', v=20) }}" />
 </head>
-<body>
+<body{% if request.args.get('window') == '1' %} class="menu-window-view"{% endif %}>
     <div class="background-glow glow-a"></div>
     <div class="background-glow glow-b"></div>
 
@@ -17,11 +17,11 @@
         <header class="hero">
             <div class="hero-left">
                 <a class="dashboard-icon" href="{{ url_for('dashboard') }}" aria-label="{{ 'Ververs pagina' if request.endpoint == 'dashboard' else 'Terug naar dashboard' }}">
-                <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <rect x="3" y="3" width="7.5" height="9" rx="2"/><rect x="13.5" y="3" width="7.5" height="5.5" rx="2"/>
-                <rect x="13.5" y="12" width="7.5" height="9" rx="2"/><rect x="3" y="15.5" width="7.5" height="5.5" rx="2"/>
-                </svg>
-                <span class="dashboard-icon-label">{{ 'Ververs pagina' if request.endpoint == 'dashboard' else 'Terug naar dashboard' }}</span>
+                    <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="m3 10 9-7 9 7"/>
+                        <path d="M5 9v12h14V9M9 21v-7h6v7"/>
+                    </svg>
+                    <span class="dashboard-icon-label">{{ 'Ververs pagina' if request.endpoint == 'dashboard' else 'Terug naar dashboard' }}</span>
                 </a>
 
             <div class="hero-brand">
@@ -60,6 +60,16 @@
                         <div class="hero-menu-item"><span class="hero-menu-text">Nog niet ingelogd</span></div>
                     {% endif %}
 
+                    {% if current_user %}
+                        {% set message_count = user_activity|length %}
+                        <button class="hero-menu-item" type="button" id="activity-open" aria-haspopup="dialog" aria-controls="menu-window-dialog">
+                            <span class="hero-menu-text">Berichtencentrum · {{ message_count }} {% if message_count == 1 %}bericht{% else %}berichten{% endif %}</span>
+                            <span class="hero-menu-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v12H8l-4 4z"/><path d="M8 9h8M8 13h5"/></svg>
+                            </span>
+                        </button>
+                    {% endif %}
+
                     {% if system_checks %}
                         <button class="hero-menu-item system-check-trigger" type="button" id="system-check-open"
                                 aria-haspopup="dialog" aria-controls="system-check-dialog">
@@ -73,8 +83,8 @@
                         </button>
                     {% endif %}
 
-                    <a class="hero-menu-item {% if active_nav == 'settings_page' %}active{% endif %}" href="{{ url_for('dashboard') if active_nav == 'settings_page' else url_for('settings_page') }}">
-                        <span class="hero-menu-text">{{ 'Instellingen sluiten' if active_nav == 'settings_page' else 'Instellingen' }}</span>
+                    <a class="hero-menu-item menu-window-link {% if active_nav == 'settings_page' %}active{% endif %}" href="{{ url_for('settings_page') }}" data-window-title="Instellingen" aria-haspopup="dialog" aria-controls="menu-window-dialog">
+                        <span class="hero-menu-text">Instellingen</span>
                         <span class="hero-menu-icon">
                             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                                 <path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 0 0-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 0 0-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 0 0-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 0 0-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 0 0 1.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" stroke-linecap="round" stroke-linejoin="round"/>
@@ -83,7 +93,7 @@
                         </span>
                     </a>
 
-                    <a class="hero-menu-item {% if active_nav == 'help_page' %}active{% endif %}" href="{{ url_for('help_page') }}" {% if active_nav == 'help_page' %}aria-current="page"{% endif %}>
+                    <a class="hero-menu-item menu-window-link {% if active_nav == 'help_page' %}active{% endif %}" href="{{ url_for('help_page') }}" data-window-title="Hulp" aria-haspopup="dialog" aria-controls="menu-window-dialog" {% if active_nav == 'help_page' %}aria-current="page"{% endif %}>
                         <span class="hero-menu-text">Hulp</span>
                         <span class="hero-menu-icon">
                             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.6 9a2.5 2.5 0 1 1 4.4 1.6c-1.2 1.1-2 1.4-2 3"/><path d="M12 17h.01"/></svg>
@@ -92,6 +102,33 @@
                 </div>
             </div>
         </header>
+
+        <dialog class="menu-window-dialog" id="menu-window-dialog" aria-labelledby="menu-window-title">
+            <div class="menu-window-head">
+                <h2 id="menu-window-title"></h2>
+                <button class="btn btn-ghost btn-small" type="button" id="menu-window-close">Sluiten</button>
+            </div>
+            <iframe id="menu-window-frame" title="Inhoud van het menu" hidden></iframe>
+            {% if current_user %}
+                <section class="menu-window-activity" id="menu-window-activity" aria-live="polite" hidden>
+                    {% set message_count = user_activity|length %}
+                    <span class="eyebrow">Berichtencentrum · {{ current_user or default_username }} · {{ message_count }} {% if message_count == 1 %}bericht{% else %}berichten{% endif %}</span>
+                    {% if user_activity %}
+                        <ol class="hero-menu-message-list">
+                            {% for item in user_activity %}
+                                <li>
+                                    <strong>{{ item.action }}</strong>
+                                    {% if item.detail %}<span class="muted">{{ item.detail }}</span>{% endif %}
+                                    <time class="muted" datetime="{{ item.timestamp }}">{{ item.timestamp|datetime_full }}</time>
+                                </li>
+                            {% endfor %}
+                        </ol>
+                    {% else %}
+                        <span class="muted">Je acties verschijnen hier zodra je een softwareproject opent of een actie uitvoert.</span>
+                    {% endif %}
+                </section>
+            {% endif %}
+        </dialog>
 
         {% if system_checks %}
             <dialog class="panel stack system-check-dialog" id="system-check-dialog" aria-labelledby="system-check-title">
@@ -156,23 +193,6 @@
                     <span class="muted">Op dit moment werkt niemand aan een softwareproject.</span>
                 {% endif %}
             </div>
-            <div class="lightbar-segment lightbar-messages" id="activity-panel" aria-live="polite">
-                {% set message_count = user_activity|length %}
-                <span class="eyebrow">Berichten · {{ current_user or default_username }} · {{ message_count }} {% if message_count == 1 %}bericht{% else %}berichten{% endif %}</span>
-                {% if user_activity %}
-                    <ol class="lightbar-list">
-                        {% for item in user_activity %}
-                            <li>
-                                <strong>{{ item.action }}</strong>
-                                {% if item.detail %}<span class="muted">{{ item.detail }}</span>{% endif %}
-                                <time class="muted" datetime="{{ item.timestamp }}">{{ item.timestamp|datetime_full }}</time>
-                            </li>
-                        {% endfor %}
-                    </ol>
-                {% else %}
-                    <span class="muted">Je acties verschijnen hier zodra je een softwareproject opent of een actie uitvoert.</span>
-                {% endif %}
-            </div>
         </section>
         {% endif %}
 
@@ -213,6 +233,6 @@
             document.addEventListener('keydown', function (e) { if (e.key === 'Escape') set(false); });
         })();
     </script>
-    <script src="{{ url_for('static', filename='app.js', v=3) }}"></script>
+    <script src="{{ url_for('static', filename='app.js', v=7) }}"></script>
 </body>
 </html>

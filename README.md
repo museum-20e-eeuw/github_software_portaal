@@ -6,13 +6,13 @@ Een lokale webapp voor medewerkers van Museum van de 20ste Eeuw om softwareproje
 
 - Dashboard met repositories, recente activiteit en lopend werk.
 - De externe synchronisatiestatus van lokale projecten wordt maximaal 60 seconden gecachet; lokale wijzigingen worden bij iedere controle opnieuw gelezen.
-- Meldingenwidget met recente acties in de huidige browsersessie.
+- Berichtencentrum in een apart venster vanuit het hamburger menu, met recente acties in de huidige browsersessie.
 - Repositories, pull requests, issues, branches en GitHub Actions-workflows bekijken.
 - Issues aanmaken en sluiten; pull requests mergen; workflows opnieuw starten of annuleren.
 - Projecten lokaal klonen, synchroniseren en bestanden openen in Visual Studio Code, Arduino IDE of de standaardapp.
 - Lokale wijzigingen committen en pushen, met optioneel een GitHub-release.
 - Nieuwe GitHub-projecten aanmaken met een Python- of Arduino-startproject, of als kopie van een bestaand project.
-- Installatie van Git, Visual Studio Code en Arduino IDE controleren via **Systeem controle** in het hamburger menu van de banner. Bij een verouderde Git-versie kan een ingelogde gebruiker via de popup handmatig een update starten; het Berichten Centrum meldt of die update slaagt of mislukt.
+- Instellingen, hulp en systeemcontrole vanuit het hamburger menu openen in een apart venster binnen het portaal. Bij een verouderde Git-versie kan een ingelogde gebruiker via Systeem controle handmatig een update starten; het Berichtencentrum meldt of die update slaagt of mislukt.
 
 > **Let op:** de actie om een lokale repository bij te werken voert een harde reset uit naar de standaardbranch op GitHub. Niet-gecommitte lokale wijzigingen kunnen daarbij verloren gaan.
 

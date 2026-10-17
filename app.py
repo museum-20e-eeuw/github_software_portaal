@@ -1038,7 +1038,7 @@ def open_file_in_tool(repo_name: str, file_path: str) -> dict[str, Any]:
     command = resolve_tool_command(tool, absolute_path)
 
     try:
-        popen = subprocess.Popen(command)
+        popen = subprocess.Popen(command, creationflags=NO_WINDOW_FLAGS)
     except OSError as exc:
         raise GitHubApiError(500, f"Kon de tool niet starten: {exc}") from exc
 
@@ -1060,6 +1060,169 @@ def open_file_in_tool(repo_name: str, file_path: str) -> dict[str, Any]:
     watcher.start()
 
     return {"session_id": session_id, "tool": tool}
+
+
+PRESENCE_ISSUE_TITLE = "Wie werkt waaraan"
+PRESENCE_HEARTBEAT_SECONDS = 300
+PRESENCE_EXPIRE_SECONDS = 900
+PRESENCE_LOCK = threading.Lock()
+PRESENCE_LOCAL: dict[str, dict[str, Any]] = {}
+PRESENCE_STATE: dict[str, Any] = {"issue": None, "comments": {}}
+
+
+def presence_repo() -> str:
+    return str(APP_CONFIG.get("presence_repo") or "github_software_portaal")
+
+
+def presence_marker(username: str) -> str:
+    return f"<!-- presence:{username.lower()} -->"
+
+
+def get_presence_issue_number(token: str) -> int:
+    """Zoek (of maak) het vaste aanwezigheidsissue in de presence-repository."""
+    if PRESENCE_STATE["issue"]:
+        return PRESENCE_STATE["issue"]
+    base = f"/repos/{quote(current_org())}/{quote(presence_repo())}/issues"
+    issues = github_request(token, "GET", base, params={"state": "open", "per_page": 100}) or []
+    for issue in issues:
+        if issue.get("title") == PRESENCE_ISSUE_TITLE and not issue.get("pull_request"):
+            PRESENCE_STATE["issue"] = issue["number"]
+            return issue["number"]
+    created = github_request(
+        token,
+        "POST",
+        base,
+        payload={
+            "title": PRESENCE_ISSUE_TITLE,
+            "body": "Automatisch bijgehouden door de museum-portal. Niet sluiten of handmatig wijzigen.",
+        },
+    )
+    PRESENCE_STATE["issue"] = created["number"]
+    return created["number"]
+
+
+def sync_presence(token: str, username: str) -> None:
+    """Schrijf de actieve bewerksessies van deze gebruiker weg naar GitHub (of verwijder ze)."""
+    try:
+        with PRESENCE_LOCK:
+            entries = [
+                {"project": s["repo_name"], "file": s["file_path"], "seen": s["seen"]}
+                for s in PRESENCE_LOCAL.values()
+                if s["username"] == username
+            ]
+            issue = get_presence_issue_number(token)
+            comments_base = f"/repos/{quote(current_org())}/{quote(presence_repo())}/issues"
+            comment_id = PRESENCE_STATE["comments"].get(username)
+            if comment_id is None:
+                existing = github_request(
+                    token, "GET", f"{comments_base}/{issue}/comments", params={"per_page": 100}
+                ) or []
+                for comment in existing:
+                    if str(comment.get("body", "")).startswith(presence_marker(username)):
+                        comment_id = comment["id"]
+                        break
+            body = (
+                f"{presence_marker(username)}\n<!--data:{json.dumps(entries)}-->\n"
+                f"**{username}**: "
+                + (", ".join(f"{e['project']} ({e['file']})" for e in entries) or "werkt nergens aan")
+            )
+            comment_path = f"/repos/{quote(current_org())}/{quote(presence_repo())}/issues/comments"
+            if comment_id is not None:
+                try:
+                    github_request(token, "PATCH", f"{comment_path}/{comment_id}", payload={"body": body})
+                    PRESENCE_STATE["comments"][username] = comment_id
+                    return
+                except GitHubApiError as exc:
+                    if exc.status_code != 404:
+                        raise
+            created = github_request(
+                token, "POST", f"{comments_base}/{issue}/comments", payload={"body": body}
+            )
+            PRESENCE_STATE["comments"][username] = created["id"]
+    except Exception as exc:
+        logger.warning("Aanwezigheid bijwerken mislukt: %s", exc)
+
+
+def _presence_loop(session_id: str, token: str, username: str) -> None:
+    """Ververs de aanwezigheid zolang het bestand open staat; ruim daarna op."""
+    last_sync = time.time()
+    while True:
+        time.sleep(5)
+        with OPEN_FILE_LOCK:
+            session = OPEN_FILE_SESSIONS.get(session_id)
+            closed = session is None or session["closed"]
+        if closed:
+            break
+        if time.time() - last_sync < PRESENCE_HEARTBEAT_SECONDS:
+            continue
+        last_sync = time.time()
+        with PRESENCE_LOCK:
+            if session_id in PRESENCE_LOCAL:
+                PRESENCE_LOCAL[session_id]["seen"] = datetime.now(timezone.utc).isoformat()
+        sync_presence(token, username)
+    with PRESENCE_LOCK:
+        PRESENCE_LOCAL.pop(session_id, None)
+    sync_presence(token, username)
+
+
+def start_presence(session_id: str, token: str, username: str, repo_name: str, file_path: str) -> None:
+    """Meld dat deze gebruiker nu daadwerkelijk een bestand bewerkt."""
+    with PRESENCE_LOCK:
+        PRESENCE_LOCAL[session_id] = {
+            "username": username,
+            "repo_name": repo_name,
+            "file_path": file_path,
+            "seen": datetime.now(timezone.utc).isoformat(),
+        }
+
+    def run() -> None:
+        sync_presence(token, username)
+        _presence_loop(session_id, token, username)
+
+    threading.Thread(target=run, daemon=True).start()
+
+
+def get_presence_work(token: str) -> list[dict[str, Any]]:
+    """Lees wie er recent een bestand bewerkt uit het aanwezigheidsissue."""
+    try:
+        issue = get_presence_issue_number(token)
+        comments = github_request(
+            token,
+            "GET",
+            f"/repos/{quote(current_org())}/{quote(presence_repo())}/issues/{issue}/comments",
+            params={"per_page": 100},
+        ) or []
+    except Exception as exc:
+        logger.debug("Aanwezigheid niet beschikbaar: %s", exc)
+        return []
+    now = datetime.now(timezone.utc)
+    work: list[dict[str, Any]] = []
+    for comment in comments:
+        body = str(comment.get("body", ""))
+        match = re.match(r"<!-- presence:([^>]*?) -->\s*<!--data:(.*?)-->", body, re.S)
+        if not match:
+            continue
+        try:
+            entries = json.loads(match.group(2))
+        except ValueError:
+            continue
+        for entry in entries:
+            try:
+                seen = datetime.fromisoformat(entry["seen"])
+            except (KeyError, ValueError):
+                continue
+            if (now - seen).total_seconds() > PRESENCE_EXPIRE_SECONDS:
+                continue
+            work.append(
+                {
+                    "user": (comment.get("user") or {}).get("login") or match.group(1),
+                    "repo_name": entry.get("project", ""),
+                    "title": f"Bewerkt {entry.get('file', '')}",
+                    "updated_at": entry["seen"],
+                    "url": comment.get("html_url"),
+                }
+            )
+    return work
 
 
 def get_open_file_session(session_id: str) -> dict[str, Any] | None:
@@ -1448,7 +1611,9 @@ def get_lightbar_data() -> dict[str, Any]:
     except Exception as exc:
         logger.debug("Lichtbalkgegevens niet beschikbaar: %s", exc)
         return empty
-    data = {"repo_count": len(repos), "active_work": build_active_work(pulls)[:6]}
+    active_work = build_active_work(pulls) + get_presence_work(g.auth.token)
+    active_work.sort(key=lambda item: item.get("updated_at") or "", reverse=True)
+    data = {"repo_count": len(repos), "active_work": active_work[:6]}
     LIGHTBAR_CACHE.update(key=key, checked_at=time.time(), data=data)
     return data
 
@@ -1804,6 +1969,7 @@ def open_project_file(repo_name: str):
         logger.warning("Bestand openen afgewezen: geen bestandspad ontvangen.")
         return api_error("Kies eerst een bestand.", 400)
     result = open_file_in_tool(repo_name, file_path)
+    start_presence(result["session_id"], g.auth.token, g.auth.username, repo_name, file_path)
     logger.info("Bestand geopend voor project %s met %s.", repo_name, result["tool"])
     record_user_activity("Projectbestand geopend", f"{repo_name} · {file_path}")
     return api_success(f"{file_path} wordt geopend met {result['tool']}.", **result)
@@ -1866,6 +2032,8 @@ def commit_project_changes(repo_name: str):
 
 @app.route("/settings", methods=["GET", "POST"])
 def settings_page():
+    window_mode = request.args.get("window") == "1"
+    settings_url = url_for("settings_page", window="1") if window_mode else url_for("settings_page")
     if request.method == "POST":
         new_workspace_root = (request.form.get("workspace_root") or "").strip()
         new_token = (request.form.get("personal_access_token") or "").strip()
@@ -1873,18 +2041,18 @@ def settings_page():
         if new_log_level not in LOG_LEVELS:
             logger.warning("Instellingen niet opgeslagen: ongeldig logniveau.")
             flash("Kies een geldig logniveau.", "error")
-            return redirect(url_for("settings_page"))
+            return redirect(settings_url)
         if not new_workspace_root:
             logger.warning("Instellingen niet opgeslagen: werkmap ontbreekt.")
             flash("Vul een geldig mappad in.", "error")
-            return redirect(url_for("settings_page"))
+            return redirect(settings_url)
         try:
             os.makedirs(new_workspace_root, exist_ok=True)
             os.makedirs(os.path.join(new_workspace_root, "logging"), exist_ok=True)
         except OSError as exc:
             logger.exception("Werkmap kon niet worden aangemaakt of gebruikt.")
             flash(f"Kon de map niet aanmaken/gebruiken: {exc}", "error")
-            return redirect(url_for("settings_page"))
+            return redirect(settings_url)
 
         changed_fields = []
         if APP_CONFIG.get("workspace_root") != new_workspace_root:
@@ -1909,6 +2077,9 @@ def settings_page():
         )
         AUTO_LOGIN_CACHE["session_id"] = None
         AUTO_LOGIN_CACHE["verified_at"] = 0.0
+        if window_mode:
+            flash("Instellingen opgeslagen.", "success")
+            return redirect(settings_url)
         return redirect(url_for("dashboard"))
 
     record_user_activity("Instellingen geopend", "")

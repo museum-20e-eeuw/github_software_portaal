@@ -74,9 +74,102 @@ function bindApiForms() {
 document.addEventListener("DOMContentLoaded", () => {
     bindApiForms();
     bindSystemCheckDialog();
+    bindMenuWindow();
+    bindDashboardViewToggle();
     bindProjectDetail();
     bindFolderPicker();
 });
+
+function bindDashboardViewToggle() {
+    const buttons = document.querySelectorAll(".dashboard-view-button");
+    const cardView = document.getElementById("dashboard-card-view");
+    const tableView = document.getElementById("dashboard-table-view");
+    if (!cardView || !tableView || buttons.length === 0) {
+        return;
+    }
+
+    const storageKey = "dashboard-project-view";
+    const savedView = sessionStorage.getItem(storageKey);
+    const initialView = savedView === "table" ? "table" : "cards";
+
+    function setView(view) {
+        const showTable = view === "table";
+        cardView.hidden = showTable;
+        tableView.hidden = !showTable;
+        for (const viewButton of buttons) {
+            const isActive = viewButton.dataset.view === view;
+            viewButton.classList.toggle("active", isActive);
+            viewButton.setAttribute("aria-pressed", String(isActive));
+        }
+        sessionStorage.setItem(storageKey, view);
+    }
+
+    setView(initialView);
+    for (const button of buttons) {
+        button.addEventListener("click", () => {
+            setView(button.dataset.view === "table" ? "table" : "cards");
+        });
+    }
+}
+
+function bindMenuWindow() {
+    const dialog = document.getElementById("menu-window-dialog");
+    const closeButton = document.getElementById("menu-window-close");
+    const title = document.getElementById("menu-window-title");
+    const frame = document.getElementById("menu-window-frame");
+    const activity = document.getElementById("menu-window-activity");
+    const menu = document.getElementById("hero-menu");
+    const burger = document.querySelector(".hero-burger");
+    if (
+        !(dialog instanceof HTMLDialogElement)
+        || !closeButton
+        || !title
+        || !(frame instanceof HTMLIFrameElement)
+        || !menu
+    ) {
+        return;
+    }
+
+    function closeMenu() {
+        menu.classList.remove("open");
+        burger?.setAttribute("aria-expanded", "false");
+    }
+
+    function openWindow(windowTitle, url, showActivity) {
+        title.textContent = windowTitle;
+        activity?.toggleAttribute("hidden", !showActivity);
+        frame.hidden = showActivity;
+        frame.src = showActivity ? "about:blank" : `${url}${url.includes("?") ? "&" : "?"}window=1`;
+        closeMenu();
+        dialog.showModal();
+        closeButton.focus();
+    }
+
+    document.getElementById("activity-open")?.addEventListener("click", () => {
+        openWindow("Berichtencentrum", "", true);
+    });
+
+    document.querySelectorAll(".menu-window-link").forEach((link) => {
+        link.addEventListener("click", (event) => {
+            event.preventDefault();
+            if (!(link instanceof HTMLAnchorElement)) {
+                return;
+            }
+            const anchor = link;
+            openWindow(anchor.dataset.windowTitle || anchor.textContent.trim(), anchor.href, false);
+        });
+    });
+
+    closeButton.addEventListener("click", () => {
+        dialog.close();
+    });
+    dialog.addEventListener("click", (event) => {
+        if (event.target === dialog) {
+            dialog.close();
+        }
+    });
+    dialog.addEventListener("close", () => frame.removeAttribute("src"));
+}
 
 function bindSystemCheckDialog() {
     const openButton = document.getElementById("system-check-open");
@@ -366,6 +459,7 @@ function bindProjectDetail() {
             return;
         }
         commitChangedFiles.textContent = `Gewijzigde bestanden: ${changedFiles.join(", ")}`;
+        commitChangedFiles.title = changedFiles.join("\n");
         commitAuthor.value = "";
         commitVersion.value = "";
         commitSummary.value = "";

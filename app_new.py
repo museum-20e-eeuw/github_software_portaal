@@ -211,17 +211,15 @@ def create_blueprint(
             "source_repo": request.form.get("source_repo", "").strip(),
             "starter_type": request.form.get("starter_type", "python").strip(),
             "description": request.form.get("description", "").strip(),
-            "visibility": request.form.get("visibility", "private").strip(),
         }
         name = values["name"]
         creation_mode = values["creation_mode"]
         starter_type = values["starter_type"]
         logger.info(
-            "Projectaanmaak gestart voor %s (methode=%s, starttype=%s, zichtbaarheid=%s).",
+            "Projectaanmaak gestart voor %s (methode=%s, starttype=%s).",
             name or "(naam ontbreekt)",
             creation_mode,
             starter_type,
-            values["visibility"],
         )
         if not re.fullmatch(r"[A-Za-z0-9._-]{1,100}", name) or name in {".", ".."}:
             logger.warning("Projectaanmaak afgewezen wegens ongeldige projectnaam.")
@@ -235,11 +233,6 @@ def create_blueprint(
             logger.warning("Projectaanmaak afgewezen wegens ongeldig starttype: %s", starter_type)
             flash("Kies Python of Arduino als startproject.", "error")
             return render_workflow("starter", values=values)
-        if values["visibility"] not in {"private", "public"}:
-            logger.warning("Projectaanmaak afgewezen wegens ongeldige zichtbaarheid.")
-            flash("Kies een geldige zichtbaarheid voor de GitHub-repository.", "error")
-            return render_workflow("details", values=values)
-
         source = next((repo for repo in repositories if repo.get("name") == values["source_repo"]), None)
         if creation_mode == "copy" and source is None:
             logger.warning("Projectaanmaak afgewezen: bronproject %s staat niet in de lijst.", values["source_repo"])
@@ -293,7 +286,7 @@ def create_blueprint(
                 payload={
                     "name": name,
                     "description": values["description"],
-                    "private": values["visibility"] == "private",
+                    "private": True,
                     "auto_init": False,
                 },
             )
