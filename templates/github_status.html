@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="panel">
+    <div class="panel-head">
+        <div>
+            <span class="eyebrow">Synchronisatie</span>
+            <h2>GitHub status</h2>
+            <p class="muted">Per gebruiker en pc: welke lokale projecten wel of niet in sync zijn met GitHub.</p>
+        </div>
+    </div>
+
+    <div class="list-stack">
+        {% for machine in machines %}
+            <article class="list-card stack">
+                <div class="list-card-top">
+                    <div>
+                        <h3>{{ machine.user }} @ {{ machine.host }}</h3>
+                        <p class="muted">
+                            {% if machine.online %}🟢 Actief{% else %}⚪ Afgesloten{% endif %}
+                            · bijgewerkt {{ machine.updated }}
+                            {% if machine.stale %}· ⏳ verouderd{% endif %}
+                        </p>
+                    </div>
+                </div>
+                <ul class="meta-list">
+                    {% for project in machine.projects %}
+                        <li>{{ project.icon }} <strong>{{ project.project }}</strong> — {{ project.label }}</li>
+                    {% else %}
+                        <li class="muted">Geen projecten.</li>
+                    {% endfor %}
+                </ul>
+            </article>
+        {% else %}
+            <p class="muted">Er is nog geen status weggeschreven.</p>
+        {% endfor %}
+    </div>
+</section>
+{% endblock %}

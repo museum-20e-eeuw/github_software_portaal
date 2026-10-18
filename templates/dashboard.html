@@ -16,22 +16,19 @@
                 <h2>Kies een softwareproject</h2>
             </div>
             <div class="dashboard-actions">
-                <div class="dashboard-view-toggle" role="group" aria-label="Weergave softwareprojecten">
-                    <button class="btn btn-ghost dashboard-view-button active" type="button" data-view="cards" aria-label="Kaartweergave" title="Kaartweergave" aria-pressed="true" aria-controls="dashboard-card-view">
-                        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <div class="dashboard-view-toggle">
+                    <button class="btn btn-ghost dashboard-view-button" type="button" id="dashboard-view-switch" aria-controls="dashboard-card-view dashboard-table-view">
+                        <svg class="view-icon-table" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <rect x="3" y="4" width="18" height="16" rx="2" />
+                            <path d="M3 10h18M9 4v16M15 10v10" />
+                        </svg>
+                        <svg class="view-icon-cards" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" hidden>
                             <rect x="3" y="3" width="8" height="8" rx="1.5" />
                             <rect x="13" y="3" width="8" height="8" rx="1.5" />
                             <rect x="3" y="13" width="8" height="8" rx="1.5" />
                             <rect x="13" y="13" width="8" height="8" rx="1.5" />
                         </svg>
-                        Kaarten
-                    </button>
-                    <button class="btn btn-ghost dashboard-view-button" type="button" data-view="table" aria-label="Tabelweergave" title="Tabelweergave" aria-pressed="false" aria-controls="dashboard-table-view">
-                        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                            <rect x="3" y="4" width="18" height="16" rx="2" />
-                            <path d="M3 10h18M9 4v16M15 10v10" />
-                        </svg>
-                        Tabel
+                        <span class="view-switch-label">Tabel</span>
                     </button>
                 </div>
                 <a class="btn btn-primary" href="{{ url_for('app_new.create_project') }}">Nieuw softwareproject</a>

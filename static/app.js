@@ -81,37 +81,34 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 function bindDashboardViewToggle() {
-    const buttons = document.querySelectorAll(".dashboard-view-button");
+    const button = document.getElementById("dashboard-view-switch");
     const cardView = document.getElementById("dashboard-card-view");
     const tableView = document.getElementById("dashboard-table-view");
-    if (!cardView || !tableView || buttons.length === 0) {
+    if (!cardView || !tableView || !button) {
         return;
     }
 
     const storageKey = "dashboard-project-view";
-    const savedView = sessionStorage.getItem(storageKey);
-    const initialView = savedView === "table" ? "table" : "cards";
+    let view = sessionStorage.getItem(storageKey) === "table" ? "table" : "cards";
 
-    function setView(view) {
+    // De knop toont de weergave waar je naartoe wisselt.
+    function setView(next) {
+        view = next;
         const showTable = view === "table";
         cardView.hidden = showTable;
         tableView.hidden = !showTable;
-        for (const viewButton of buttons) {
-            const isActive = viewButton.dataset.view === view;
-            viewButton.classList.toggle("active", isActive);
-            viewButton.setAttribute("aria-pressed", String(isActive));
-        }
+        const target = showTable ? "Kaarten" : "Tabel";
+        button.querySelector(".view-switch-label").textContent = target;
+        button.querySelector(".view-icon-table").hidden = showTable;
+        button.querySelector(".view-icon-cards").hidden = !showTable;
+        button.title = "Wissel naar " + target.toLowerCase();
+        button.setAttribute("aria-label", button.title);
         sessionStorage.setItem(storageKey, view);
     }
 
-    setView(initialView);
-    for (const button of buttons) {
-        button.addEventListener("click", () => {
-            setView(button.dataset.view === "table" ? "table" : "cards");
-        });
-    }
+    setView(view);
+    button.addEventListener("click", () => setView(view === "table" ? "cards" : "table"));
 }
-
 function bindMenuWindow() {
     const dialog = document.getElementById("menu-window-dialog");
     const closeButton = document.getElementById("menu-window-close");

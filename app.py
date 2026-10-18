@@ -12,6 +12,7 @@ Techniek: Python, Flask en GitHub REST API
 
 from __future__ import annotations
 
+import atexit
 import ctypes
 import json
 import logging
@@ -19,6 +20,7 @@ import os
 import re
 import secrets
 import shutil
+import socket
 import subprocess
 import sys
 import threading
@@ -1062,75 +1064,100 @@ def open_file_in_tool(repo_name: str, file_path: str) -> dict[str, Any]:
     return {"session_id": session_id, "tool": tool}
 
 
-PRESENCE_ISSUE_TITLE = "Wie werkt waaraan"
-PRESENCE_HEARTBEAT_SECONDS = 300
-PRESENCE_EXPIRE_SECONDS = 900
-PRESENCE_LOCK = threading.Lock()
-PRESENCE_LOCAL: dict[str, dict[str, Any]] = {}
-PRESENCE_STATE: dict[str, Any] = {"issue": None, "comments": {}}
+STATUS_ISSUE_TITLE = "GitHub status"
+STATUS_HEARTBEAT_SECONDS = 300
+STATUS_STALE_SECONDS = 24 * 3600
+STATUS_LOCK = threading.Lock()
+STATUS_STATE: dict[str, Any] = {"issue": None, "comments": {}, "reporter": None}
+STATUS_ICONS = {"in_sync": "✅", "out_of_sync": "⚠️", "missing": "❌"}
+STATUS_LABELS = {"in_sync": "In sync", "out_of_sync": "Niet in sync", "missing": "Niet in sync (niet lokaal aanwezig)"}
 
 
-def presence_repo() -> str:
+def status_repo() -> str:
     return str(APP_CONFIG.get("presence_repo") or "github_software_portaal")
 
 
-def presence_marker(username: str) -> str:
-    return f"<!-- presence:{username.lower()} -->"
+def status_machine_key(username: str) -> str:
+    return f"{username}@{socket.gethostname()}"
 
 
-def get_presence_issue_number(token: str) -> int:
-    """Zoek (of maak) het vaste aanwezigheidsissue in de presence-repository."""
-    if PRESENCE_STATE["issue"]:
-        return PRESENCE_STATE["issue"]
-    base = f"/repos/{quote(current_org())}/{quote(presence_repo())}/issues"
+def status_marker(machine_key: str) -> str:
+    return f"<!-- ghstatus:{machine_key.lower()} -->"
+
+
+def get_status_issue_number(token: str) -> int:
+    """Zoek (of maak) het vaste statusissue in de status-repository."""
+    if STATUS_STATE["issue"]:
+        return STATUS_STATE["issue"]
+    base = f"/repos/{quote(current_org())}/{quote(status_repo())}/issues"
     issues = github_request(token, "GET", base, params={"state": "open", "per_page": 100}) or []
     for issue in issues:
-        if issue.get("title") == PRESENCE_ISSUE_TITLE and not issue.get("pull_request"):
-            PRESENCE_STATE["issue"] = issue["number"]
+        if issue.get("title") == STATUS_ISSUE_TITLE and not issue.get("pull_request"):
+            STATUS_STATE["issue"] = issue["number"]
             return issue["number"]
     created = github_request(
         token,
         "POST",
         base,
         payload={
-            "title": PRESENCE_ISSUE_TITLE,
+            "title": STATUS_ISSUE_TITLE,
             "body": "Automatisch bijgehouden door de museum-portal. Niet sluiten of handmatig wijzigen.",
         },
     )
-    PRESENCE_STATE["issue"] = created["number"]
+    STATUS_STATE["issue"] = created["number"]
     return created["number"]
 
 
-def sync_presence(token: str, username: str) -> None:
-    """Schrijf de actieve bewerksessies van deze gebruiker weg naar GitHub (of verwijder ze)."""
+def collect_project_statuses(token: str) -> list[dict[str, str]]:
+    """Bepaal per lokaal gekloond project of het in sync is met GitHub."""
+    repos = add_local_project_paths(get_org_repositories(token))
+    return sorted(
+        ({"project": repo["name"], "state": repo["sync_state"]} for repo in repos),
+        key=lambda item: item["project"].lower(),
+    )
+
+
+def publish_github_status(token: str, username: str, online: bool = True) -> None:
+    """Schrijf de sync-status van alle lokale projecten van deze pc weg naar GitHub."""
     try:
-        with PRESENCE_LOCK:
-            entries = [
-                {"project": s["repo_name"], "file": s["file_path"], "seen": s["seen"]}
-                for s in PRESENCE_LOCAL.values()
-                if s["username"] == username
-            ]
-            issue = get_presence_issue_number(token)
-            comments_base = f"/repos/{quote(current_org())}/{quote(presence_repo())}/issues"
-            comment_id = PRESENCE_STATE["comments"].get(username)
+        projects = collect_project_statuses(token) if online else None
+        with STATUS_LOCK:
+            machine = status_machine_key(username)
+            if projects is None:
+                projects = STATUS_STATE.get("last_projects", [])
+            STATUS_STATE["last_projects"] = projects
+            data = {
+                "user": username,
+                "host": socket.gethostname(),
+                "online": online,
+                "updated": datetime.now(timezone.utc).isoformat(),
+                "projects": projects,
+            }
+            rows = "\n".join(
+                f"| {STATUS_ICONS[p['state']]} | {p['project']} | {STATUS_LABELS[p['state']]} |" for p in projects
+            )
+            body = (
+                f"{status_marker(machine)}\n<!--data:{json.dumps(data)}-->\n"
+                f"**{machine}** ({'actief' if online else 'afgesloten'})\n\n"
+                f"| | Project | Status |\n|---|---|---|\n{rows}"
+            )
+            issue = get_status_issue_number(token)
+            comments_base = f"/repos/{quote(current_org())}/{quote(status_repo())}/issues"
+            comment_id = STATUS_STATE["comments"].get(machine)
             if comment_id is None:
                 existing = github_request(
                     token, "GET", f"{comments_base}/{issue}/comments", params={"per_page": 100}
                 ) or []
                 for comment in existing:
-                    if str(comment.get("body", "")).startswith(presence_marker(username)):
+                    if str(comment.get("body", "")).startswith(status_marker(machine)):
                         comment_id = comment["id"]
                         break
-            body = (
-                f"{presence_marker(username)}\n<!--data:{json.dumps(entries)}-->\n"
-                f"**{username}**: "
-                + (", ".join(f"{e['project']} ({e['file']})" for e in entries) or "werkt nergens aan")
-            )
-            comment_path = f"/repos/{quote(current_org())}/{quote(presence_repo())}/issues/comments"
             if comment_id is not None:
                 try:
-                    github_request(token, "PATCH", f"{comment_path}/{comment_id}", payload={"body": body})
-                    PRESENCE_STATE["comments"][username] = comment_id
+                    github_request(
+                        token, "PATCH", f"{comments_base}/comments/{comment_id}", payload={"body": body}
+                    )
+                    STATUS_STATE["comments"][machine] = comment_id
                     return
                 except GitHubApiError as exc:
                     if exc.status_code != 404:
@@ -1138,91 +1165,80 @@ def sync_presence(token: str, username: str) -> None:
             created = github_request(
                 token, "POST", f"{comments_base}/{issue}/comments", payload={"body": body}
             )
-            PRESENCE_STATE["comments"][username] = created["id"]
+            STATUS_STATE["comments"][machine] = created["id"]
     except Exception as exc:
-        logger.warning("Aanwezigheid bijwerken mislukt: %s", exc)
+        logger.warning("GitHub-status bijwerken mislukt: %s", exc)
 
 
-def _presence_loop(session_id: str, token: str, username: str) -> None:
-    """Ververs de aanwezigheid zolang het bestand open staat; ruim daarna op."""
-    last_sync = time.time()
+def _status_loop() -> None:
     while True:
-        time.sleep(5)
-        with OPEN_FILE_LOCK:
-            session = OPEN_FILE_SESSIONS.get(session_id)
-            closed = session is None or session["closed"]
-        if closed:
-            break
-        if time.time() - last_sync < PRESENCE_HEARTBEAT_SECONDS:
-            continue
-        last_sync = time.time()
-        with PRESENCE_LOCK:
-            if session_id in PRESENCE_LOCAL:
-                PRESENCE_LOCAL[session_id]["seen"] = datetime.now(timezone.utc).isoformat()
-        sync_presence(token, username)
-    with PRESENCE_LOCK:
-        PRESENCE_LOCAL.pop(session_id, None)
-    sync_presence(token, username)
+        time.sleep(STATUS_HEARTBEAT_SECONDS)
+        reporter = STATUS_STATE["reporter"]
+        if reporter:
+            publish_github_status(reporter["token"], reporter["username"])
 
 
-def start_presence(session_id: str, token: str, username: str, repo_name: str, file_path: str) -> None:
-    """Meld dat deze gebruiker nu daadwerkelijk een bestand bewerkt."""
-    with PRESENCE_LOCK:
-        PRESENCE_LOCAL[session_id] = {
-            "username": username,
-            "repo_name": repo_name,
-            "file_path": file_path,
-            "seen": datetime.now(timezone.utc).isoformat(),
-        }
-
-    def run() -> None:
-        sync_presence(token, username)
-        _presence_loop(session_id, token, username)
-
-    threading.Thread(target=run, daemon=True).start()
+def ensure_status_reporter(token: str, username: str) -> None:
+    """Start (eenmalig) het wegschrijven van de status: nu, periodiek en bij afsluiten."""
+    with STATUS_LOCK:
+        first = STATUS_STATE["reporter"] is None
+        STATUS_STATE["reporter"] = {"token": token, "username": username}
+    if first:
+        threading.Thread(target=publish_github_status, args=(token, username), daemon=True).start()
+        threading.Thread(target=_status_loop, daemon=True).start()
 
 
-def get_presence_work(token: str) -> list[dict[str, Any]]:
-    """Lees wie er recent een bestand bewerkt uit het aanwezigheidsissue."""
+def publish_status_on_exit() -> None:
+    reporter = STATUS_STATE["reporter"]
+    if reporter:
+        publish_github_status(reporter["token"], reporter["username"], online=False)
+
+
+def get_github_status_overview(token: str) -> list[dict[str, Any]]:
+    """Lees de status van alle pc's van alle gebruikers uit het statusissue."""
     try:
-        issue = get_presence_issue_number(token)
+        issue = get_status_issue_number(token)
         comments = github_request(
             token,
             "GET",
-            f"/repos/{quote(current_org())}/{quote(presence_repo())}/issues/{issue}/comments",
+            f"/repos/{quote(current_org())}/{quote(status_repo())}/issues/{issue}/comments",
             params={"per_page": 100},
         ) or []
     except Exception as exc:
-        logger.debug("Aanwezigheid niet beschikbaar: %s", exc)
+        logger.debug("GitHub-status niet beschikbaar: %s", exc)
         return []
     now = datetime.now(timezone.utc)
-    work: list[dict[str, Any]] = []
+    machines: list[dict[str, Any]] = []
     for comment in comments:
-        body = str(comment.get("body", ""))
-        match = re.match(r"<!-- presence:([^>]*?) -->\s*<!--data:(.*?)-->", body, re.S)
+        match = re.match(r"<!-- ghstatus:[^>]*? -->\s*<!--data:(.*?)-->", str(comment.get("body", "")), re.S)
         if not match:
             continue
         try:
-            entries = json.loads(match.group(2))
-        except ValueError:
+            data = json.loads(match.group(1))
+            updated = datetime.fromisoformat(data["updated"])
+        except (ValueError, KeyError):
             continue
-        for entry in entries:
-            try:
-                seen = datetime.fromisoformat(entry["seen"])
-            except (KeyError, ValueError):
-                continue
-            if (now - seen).total_seconds() > PRESENCE_EXPIRE_SECONDS:
-                continue
-            work.append(
-                {
-                    "user": (comment.get("user") or {}).get("login") or match.group(1),
-                    "repo_name": entry.get("project", ""),
-                    "title": f"Bewerkt {entry.get('file', '')}",
-                    "updated_at": entry["seen"],
-                    "url": comment.get("html_url"),
-                }
-            )
-    return work
+        projects = [
+            {
+                "project": p.get("project", ""),
+                "icon": STATUS_ICONS.get(p.get("state"), ""),
+                "label": STATUS_LABELS.get(p.get("state"), ""),
+                "state": p.get("state"),
+            }
+            for p in data.get("projects", [])
+        ]
+        machines.append(
+            {
+                "user": data.get("user", ""),
+                "host": data.get("host", ""),
+                "online": bool(data.get("online")) and (now - updated).total_seconds() < 2 * STATUS_HEARTBEAT_SECONDS,
+                "stale": (now - updated).total_seconds() > STATUS_STALE_SECONDS,
+                "updated": updated.astimezone().strftime("%d-%m-%Y %H:%M"),
+                "projects": projects,
+            }
+        )
+    machines.sort(key=lambda m: (m["user"].lower(), m["host"].lower()))
+    return machines
 
 
 def get_open_file_session(session_id: str) -> dict[str, Any] | None:
@@ -1554,6 +1570,8 @@ def load_request_context():
         if session_id:
             g.auth = SESSION_STORE.get(session_id)
             g.new_auto_login_session_id = session_id
+    if g.auth is not None and STATUS_STATE["reporter"] is None and request.endpoint != "static":
+        ensure_status_reporter(g.auth.token, g.auth.username)
 
 
 @app.after_request
@@ -1594,7 +1612,7 @@ def build_active_work(pulls: dict[str, Any]) -> list[dict[str, Any]]:
 
 def get_lightbar_data() -> dict[str, Any]:
     """Gegevens voor de altijd zichtbare lichtbalk, kort gecachet."""
-    empty = {"repo_count": 0, "active_work": []}
+    empty = {"repo_count": 0}
     if not g.get("auth") or request.endpoint in (None, "static"):
         return empty
     key = (g.auth.username, current_org())
@@ -1607,13 +1625,10 @@ def get_lightbar_data() -> dict[str, Any]:
         return cached
     try:
         repos = get_org_repositories(g.auth.token)
-        pulls = get_org_pull_requests(g.auth.token)
     except Exception as exc:
         logger.debug("Lichtbalkgegevens niet beschikbaar: %s", exc)
         return empty
-    active_work = build_active_work(pulls) + get_presence_work(g.auth.token)
-    active_work.sort(key=lambda item: item.get("updated_at") or "", reverse=True)
-    data = {"repo_count": len(repos), "active_work": active_work[:6]}
+    data = {"repo_count": len(repos)}
     LIGHTBAR_CACHE.update(key=key, checked_at=time.time(), data=data)
     return data
 
@@ -1796,6 +1811,16 @@ def issues():
     )
 
 
+@app.route("/github-status")
+@require_login
+def github_status():
+    return render_template(
+        "github_status.html",
+        active_nav="github_status",
+        machines=get_github_status_overview(g.auth.token),
+    )
+
+
 @app.route("/workflows")
 @require_login
 def workflows():
@@ -1969,7 +1994,6 @@ def open_project_file(repo_name: str):
         logger.warning("Bestand openen afgewezen: geen bestandspad ontvangen.")
         return api_error("Kies eerst een bestand.", 400)
     result = open_file_in_tool(repo_name, file_path)
-    start_presence(result["session_id"], g.auth.token, g.auth.username, repo_name, file_path)
     logger.info("Bestand geopend voor project %s met %s.", repo_name, result["tool"])
     record_user_activity("Projectbestand geopend", f"{repo_name} · {file_path}")
     return api_success(f"{file_path} wordt geopend met {result['tool']}.", **result)
@@ -2405,6 +2429,7 @@ def _run_browser_and_exit(url: str, port: int) -> None:
         [browser, f"--user-data-dir={profile}", "--no-first-run", "--no-default-browser-check", url]
     )
     process.wait()
+    publish_status_on_exit()
     os._exit(0)
 
 
@@ -2415,6 +2440,10 @@ if __name__ == "__main__":
     if sys.stderr is None:
         sys.stderr = open(os.devnull, "w")
     port = int(os.getenv("PORT", "5080"))
+    pat = str(APP_CONFIG.get("personal_access_token") or "").strip()
+    if pat and APP_CONFIG.get("default_username"):
+        ensure_status_reporter(pat, str(APP_CONFIG["default_username"]))
+    atexit.register(publish_status_on_exit)
     threading.Thread(
         target=_run_browser_and_exit,
         args=(f"http://127.0.0.1:{port}/dashboard", port),
