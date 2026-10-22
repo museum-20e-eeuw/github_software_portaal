@@ -4,7 +4,7 @@ Een lokale webapp voor medewerkers van Museum van de 20ste Eeuw om softwareproje
 
 ## Functies
 
-- Dashboard met repositories, recente activiteit en lopend werk.
+- Dashboard met repositories, recente activiteit en lopend werk, te tonen als kaarten of als tabel. De gekozen weergave wordt vastgelegd in `config.json` (`project_view`), zowel via de knop op het dashboard als via **Instellingen**.
 - De externe synchronisatiestatus van lokale projecten wordt maximaal 60 seconden gecachet; lokale wijzigingen worden bij iedere controle opnieuw gelezen.
 - Berichtencentrum in een apart venster vanuit het hamburger menu, met recente acties in de huidige browsersessie.
 - Repositories, pull requests, issues, branches en GitHub Actions-workflows bekijken.
@@ -12,6 +12,7 @@ Een lokale webapp voor medewerkers van Museum van de 20ste Eeuw om softwareproje
 - Projecten lokaal klonen, synchroniseren en bestanden openen in Visual Studio Code, Arduino IDE of de standaardapp.
 - Lokale wijzigingen committen en pushen, met optioneel een GitHub-release.
 - Nieuwe GitHub-projecten aanmaken met een Python- of Arduino-startproject, of als kopie van een bestaand project.
+- Het hamburger menu bevat: Berichtencentrum, Systeem controle, GitHub status, Instellingen en Hulp, plus de aangemelde gebruiker met Uitloggen.
 - Instellingen, hulp en systeemcontrole vanuit het hamburger menu openen in een apart venster binnen het portaal. Bij een verouderde Git-versie kan een ingelogde gebruiker via Systeem controle handmatig een update starten; het Berichtencentrum meldt of die update slaagt of mislukt.
 
 > **Let op:** de actie om een lokale repository bij te werken voert een harde reset uit naar de standaardbranch op GitHub. Niet-gecommitte lokale wijzigingen kunnen daarbij verloren gaan.
@@ -45,7 +46,7 @@ Voer deze stappen uit vanuit de hoofdmap van deze repository.
      "workflow_repo_limit": 6,
      "repo_preview_limit": 5,
      "log_level": "DEBUG",
-     "workspace_root": "C:\\museum2000\\Workspace",
+     "project_view": "cards",: "C:\\museum2000\\Workspace",
      "personal_access_token": ""
    }
    ```
@@ -80,12 +81,13 @@ De belangrijkste instellingen staan in `config.json`:
 - `workflow_repo_limit`: maximaal aantal repositories voor het workflow-overzicht.
 - `repo_preview_limit`: aantal items in repositoryvoorbeelden.
 - `log_level`: minimaal logniveau (`DEBUG`, `INFO`, `WARNING`, `ERROR` of `CRITICAL`).
+- `project_view`: weergave van projecten op het dashboard (`cards` of `table`).
 - `workspace_root`: map voor lokale projectklonen en logging.
 - `personal_access_token`: optioneel token voor automatisch aanmelden.
 
-De werkmap en het logniveau kunnen ook via **Instellingen** in de app worden gewijzigd. De app maakt onder `workspace_root` de submap `logging` aan en schrijft daar `app.log` en `app_new.log`. Het gekozen logniveau geldt voor beide bestanden. De logbestanden roteren bij 5 MB; maximaal vijf oude bestanden per log blijven bewaard.
+De werkmap, het logniveau, de projectweergave en het token kunnen ook via **Instellingen** in de app worden gewijzigd. De app maakt onder `workspace_root` de submap `logging` aan en schrijft daar `app.log` en `app_new.log`. Het gekozen logniveau geldt voor beide bestanden. De logbestanden roteren bij 5 MB; maximaal vijf oude bestanden per log blijven bewaard.
 
-De meldingenwidget op het dashboard toont maximaal 50 recente gebruikersacties, zoals het openen van een project, het opslaan van instellingen en het pushen van wijzigingen. Deze actielijst staat alleen tijdelijk in het geheugen en wordt gewist wanneer de app opnieuw wordt gestart.
+De meldingen in het **Berichtencentrum** (hamburger menu) tonen maximaal 50 recente gebruikersacties, zoals het openen van een project, het opslaan van instellingen en het pushen van wijzigingen. Deze actielijst staat alleen tijdelijk in het geheugen en wordt gewist wanneer de app opnieuw wordt gestart.
 
 ## Belangrijke bestanden
 

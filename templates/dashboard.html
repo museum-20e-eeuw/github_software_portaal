@@ -17,7 +17,7 @@
             </div>
             <div class="dashboard-actions">
                 <div class="dashboard-view-toggle">
-                    <button class="btn btn-ghost dashboard-view-button" type="button" id="dashboard-view-switch" aria-controls="dashboard-card-view dashboard-table-view">
+                    <button class="btn btn-ghost dashboard-view-button" type="button" id="dashboard-view-switch" data-initial-view="{{ project_view }}" data-save-url="{{ url_for('set_project_view') }}" aria-controls="dashboard-card-view dashboard-table-view">
                         <svg class="view-icon-table" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                             <rect x="3" y="4" width="18" height="16" rx="2" />
                             <path d="M3 10h18M9 4v16M15 10v10" />

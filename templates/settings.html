@@ -35,6 +35,18 @@
             </p>
 
             <label>
+                Weergave van projecten
+                <select name="project_view" id="project-view-select">
+                    <option value="cards" {% if project_view == "cards" %}selected{% endif %}>Kaarten</option>
+                    <option value="table" {% if project_view == "table" %}selected{% endif %}>Tabel</option>
+                </select>
+            </label>
+            <p class="muted">
+                Bepaalt hoe projecten op het startscherm worden getoond. De knop op het startscherm past
+                deze instelling ook aan.
+            </p>
+
+            <label>
                 Logniveau
                 <select name="log_level" id="log-level-select">
                     {% for level in ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] %}

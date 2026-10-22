@@ -1769,7 +1769,22 @@ def dashboard():
         repositories=ordered_repos,
         repo_count=len(repos),
         active_work=active_work[:6],
+        project_view=normalize_project_view(APP_CONFIG.get("project_view")),
     )
+
+
+def normalize_project_view(value: Any) -> str:
+    return "table" if str(value or "").strip().lower() == "table" else "cards"
+
+
+@app.post("/api/project-view")
+def set_project_view():
+    payload = request.get_json(silent=True) or {}
+    view = str(payload.get("view") or "").strip().lower()
+    if view not in ("cards", "table"):
+        return api_error("Ongeldige weergave.", 400)
+    save_app_config({"project_view": view})
+    return api_success("Weergave opgeslagen.", view=view)
 
 
 @app.route("/repositories")
@@ -2066,6 +2081,7 @@ def settings_page():
             logger.warning("Instellingen niet opgeslagen: ongeldig logniveau.")
             flash("Kies een geldig logniveau.", "error")
             return redirect(settings_url)
+        new_project_view = normalize_project_view(request.form.get("project_view"))
         if not new_workspace_root:
             logger.warning("Instellingen niet opgeslagen: werkmap ontbreekt.")
             flash("Vul een geldig mappad in.", "error")
@@ -2085,9 +2101,12 @@ def settings_page():
             changed_fields.append("logniveau")
         if str(APP_CONFIG.get("personal_access_token") or "") != new_token:
             changed_fields.append("GitHub-token")
+        if normalize_project_view(APP_CONFIG.get("project_view")) != new_project_view:
+            changed_fields.append("projectweergave")
 
         save_app_config(
             {
+                "project_view": new_project_view,
                 "workspace_root": new_workspace_root,
                 "personal_access_token": new_token,
                 "log_level": new_log_level,
@@ -2113,6 +2132,7 @@ def settings_page():
         workspace_root=workspace_root(),
         personal_access_token=str(APP_CONFIG.get("personal_access_token") or ""),
         log_level=str(APP_CONFIG.get("log_level") or "DEBUG").upper(),
+        project_view=normalize_project_view(APP_CONFIG.get("project_view")),
     )
 
 

@@ -88,8 +88,15 @@ function bindDashboardViewToggle() {
         return;
     }
 
-    const storageKey = "dashboard-project-view";
-    let view = sessionStorage.getItem(storageKey) === "table" ? "table" : "cards";
+    let view = button.dataset.initialView === "table" ? "table" : "cards";
+
+    function saveView() {
+        fetch(button.dataset.saveUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ view }),
+        }).catch(() => {});
+    }
 
     // De knop toont de weergave waar je naartoe wisselt.
     function setView(next) {
@@ -103,11 +110,13 @@ function bindDashboardViewToggle() {
         button.querySelector(".view-icon-cards").hidden = !showTable;
         button.title = "Wissel naar " + target.toLowerCase();
         button.setAttribute("aria-label", button.title);
-        sessionStorage.setItem(storageKey, view);
     }
 
     setView(view);
-    button.addEventListener("click", () => setView(view === "table" ? "cards" : "table"));
+    button.addEventListener("click", () => {
+        setView(view === "table" ? "cards" : "table");
+        saveView();
+    });
 }
 function bindMenuWindow() {
     const dialog = document.getElementById("menu-window-dialog");

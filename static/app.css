@@ -1783,8 +1783,9 @@ body.menu-window-view { min-height: 100%; background: var(--bg); }
 .system-check-dialog {
     width: min(900px, calc(100% - 32px));
     max-width: 900px;
-    height: min(820px, calc(100% - 32px));
+    height: auto;
     max-height: 90vh;
+    align-content: start;
     margin: auto;
     padding: 18px;
     overflow-y: auto;
