@@ -88,6 +88,12 @@
                         <span class="status-chip status-warn">Niet in sync</span>
                     {% endif %}
                 </div>
+                {% if local_status.excluded_patterns %}
+                    <p class="muted">
+                        Uitgesloten dynamische bestanden:
+                        {% for pat in local_status.excluded_patterns %}<code>{{ pat }}</code>{% if not loop.last %}, {% endif %}{% endfor %}
+                    </p>
+                {% endif %}
                 {% if not local_status.in_sync %}
                     <p class="muted">
                         {% if local_status.behind %}{{ local_status.behind }} commit(s) achter op GitHub. {% endif %}

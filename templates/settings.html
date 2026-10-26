@@ -59,6 +59,17 @@
                 DEBUG bevat de meeste details; CRITICAL alleen kritieke fouten.
             </p>
 
+            <label>
+                Uitgesloten dynamische bestanden bij GitHub-sync
+                <textarea name="excluded_files" id="excluded-files-input" rows="5" spellcheck="false" placeholder="*: sync_status.json&#10;Interview-bot: resultaten.json&#10;Interview-analyse: ruwe_data_resultaten.json, geanalyseerde_data_resultaten.json">{{ excluded_files_text }}</textarea>
+            </label>
+            <p class="muted">
+                Dynamische bestanden die op GitHub of lokaal automatisch veranderen en genegeerd moeten worden
+                bij de synchronisatie van een nieuwe softwareversie. Gebruik één regel per project in de vorm
+                <code>Projectnaam: bestand1.json, bestand2.json</code> of <code>*: bestand.json</code> voor alle projecten
+                (wildcards zoals <code>*.log</code> zijn ook mogelijk).
+            </p>
+
             <div class="action-row">
                 <button class="btn btn-primary" type="submit">Opslaan</button>
                 {% if request.args.get('window') != '1' %}

@@ -9,5 +9,6 @@ if not exist ".venv\Scripts\pythonw.exe" (
     exit /b 1
 )
 
-rem Start zonder consolevenster; de server stopt automatisch als de browser sluit.
-start "" ".venv\Scripts\pythonw.exe" app.py
+rem Start volledig losgekoppeld zonder consolevenster; de server stopt automatisch als de browser sluit.
+".venv\Scripts\pythonw.exe" app.py --spawn-detached
+exit

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import atexit
 import ctypes
+import fnmatch
 import json
 import logging
 import os
@@ -38,6 +39,50 @@ from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
 NO_WINDOW_FLAGS = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
+
+def _hide_and_detach_console() -> None:
+    """Verberg en ontkoppel een eventueel gekoppeld Windows-consolevenster."""
+    try:
+        hwnd = ctypes.windll.kernel32.GetConsoleWindow()
+        if hwnd:
+            ctypes.windll.user32.ShowWindow(hwnd, 0)
+        ctypes.windll.kernel32.FreeConsole()
+    except Exception:
+        pass
+
+
+def _spawn_detached_if_requested() -> None:
+    """Start een volledig losgekoppeld achtergrondproces zodat een bat/console direct sluit."""
+    if "--spawn-detached" not in sys.argv:
+        return
+    _hide_and_detach_console()
+    base_flags = (
+        getattr(subprocess, "DETACHED_PROCESS", 0x00000008)
+        | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200)
+        | NO_WINDOW_FLAGS
+    )
+    breakaway = getattr(subprocess, "CREATE_BREAKAWAY_FROM_JOB", 0x01000000)
+    args = [sys.executable, os.path.abspath(__file__)]
+    for flags in (base_flags | breakaway, base_flags):
+        try:
+            subprocess.Popen(
+                args,
+                cwd=os.path.dirname(os.path.abspath(__file__)),
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                close_fds=True,
+                creationflags=flags,
+            )
+            break
+        except OSError:
+            continue
+    os._exit(0)
+
+
+if __name__ == "__main__":
+    _spawn_detached_if_requested()
 
 
 def run_hidden(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess:
@@ -92,19 +137,177 @@ class GitHubApiError(Exception):
         self.message = message
 
 
+DEFAULT_EXCLUDED_FILES: dict[str, list[str]] = {
+    "*": ["sync_status.json"],
+    "Interview-bot": ["resultaten.json"],
+    "Interview-analyse": [
+        "ruwe_data_resultaten.json",
+        "geanalyseerde_data_resultaten.json",
+        "sync_status.json",
+    ],
+}
+_CONFIG_MTIME: float = 0.0
+
+
 def load_app_config() -> dict[str, Any]:
     """Lees de lokale instellingen uit config.json."""
+    global _CONFIG_MTIME
     with open(CONFIG_PATH, "r", encoding="utf-8") as handle:
-        return json.load(handle)
+        data = json.load(handle)
+    try:
+        _CONFIG_MTIME = os.path.getmtime(CONFIG_PATH)
+    except OSError:
+        pass
+    return data
+
+
+def refresh_app_config_if_changed() -> None:
+    """Herlaad config.json als het bestand op schijf is aangepast."""
+    global _CONFIG_MTIME
+    try:
+        mtime = os.path.getmtime(CONFIG_PATH)
+    except OSError:
+        return
+    if mtime != _CONFIG_MTIME:
+        try:
+            loaded = load_app_config()
+            APP_CONFIG.clear()
+            APP_CONFIG.update(loaded)
+        except Exception as exc:
+            logger.warning("Kon gewijzigde config.json niet herladen: %s", exc)
 
 
 def save_app_config(updates: dict[str, Any]) -> None:
     """Werk instellingen bij en sla de volledige configuratie op."""
+    global _CONFIG_MTIME
     APP_CONFIG.update(updates)
     with open(CONFIG_PATH, "w", encoding="utf-8") as handle:
         json.dump(APP_CONFIG, handle, ensure_ascii=False, indent=2)
         handle.write("\n")
+    try:
+        _CONFIG_MTIME = os.path.getmtime(CONFIG_PATH)
+    except OSError:
+        pass
     logger.info("Configuratie bijgewerkt; velden: %s", sorted(set(updates) - {"personal_access_token"}))
+
+
+def normalize_excluded_files(raw: Any) -> dict[str, list[str]]:
+    """Zet de configuratie voor uitgesloten bestanden om naar {project: [patronen]}."""
+    result: dict[str, list[str]] = {}
+    if isinstance(raw, list):
+        items = [str(item).strip() for item in raw if str(item).strip()]
+        if items:
+            result["*"] = list(dict.fromkeys(items))
+        return result
+    if isinstance(raw, dict):
+        for repo_key, patterns in raw.items():
+            key = str(repo_key).strip() or "*"
+            if isinstance(patterns, str):
+                raw_items = [part.strip() for part in patterns.split(",")]
+            elif isinstance(patterns, list):
+                raw_items = [str(part).strip() for part in patterns]
+            else:
+                continue
+            cleaned = [item for item in raw_items if item]
+            if cleaned:
+                existing = result.setdefault(key, [])
+                for item in cleaned:
+                    if item not in existing:
+                        existing.append(item)
+        return result
+    if isinstance(raw, str):
+        return parse_excluded_files_text(raw)
+    return result
+
+
+def parse_excluded_files_text(text: str) -> dict[str, list[str]]:
+    """Verwerk tekstinvoer uit het instellingenformulier (of JSON) naar een dict."""
+    stripped = (text or "").strip()
+    if not stripped:
+        return {}
+    if stripped.startswith("{") or stripped.startswith("["):
+        try:
+            return normalize_excluded_files(json.loads(stripped))
+        except json.JSONDecodeError:
+            pass
+
+    result: dict[str, list[str]] = {}
+    for raw_line in stripped.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if ":" in line:
+            repo_part, patterns_part = line.split(":", 1)
+            repo_key = repo_part.strip() or "*"
+        else:
+            repo_key = "*"
+            patterns_part = line
+        patterns = [item.strip() for item in patterns_part.split(",") if item.strip()]
+        if not patterns:
+            continue
+        bucket = result.setdefault(repo_key, [])
+        for pat in patterns:
+            if pat not in bucket:
+                bucket.append(pat)
+    return result
+
+
+def format_excluded_files_text(excluded: Any) -> str:
+    """Formatteer de uitgesloten bestanden leesbaar per regel voor het instellingenformulier."""
+    normalized = normalize_excluded_files(excluded)
+    lines: list[str] = []
+    for repo_key, patterns in normalized.items():
+        if patterns:
+            lines.append(f"{repo_key}: {', '.join(patterns)}")
+    return "\n".join(lines)
+
+
+def get_repo_excluded_patterns(repo_name: str) -> list[str]:
+    """Geef alle uitgesloten bestandspatronen terug die gelden voor een repository."""
+    refresh_app_config_if_changed()
+    raw = APP_CONFIG.get("excluded_files", DEFAULT_EXCLUDED_FILES)
+    mapping = normalize_excluded_files(raw)
+    patterns: list[str] = []
+    target_lower = repo_name.strip().lower()
+    for key, repo_patterns in mapping.items():
+        key_lower = key.strip().lower()
+        if key_lower == "*" or key_lower == target_lower or fnmatch.fnmatchcase(target_lower, key_lower):
+            for pat in repo_patterns:
+                if pat not in patterns:
+                    patterns.append(pat)
+    return patterns
+
+
+def _clean_git_path(raw_path: str) -> str:
+    path = raw_path.strip()
+    if len(path) >= 2 and path.startswith('"') and path.endswith('"'):
+        path = path[1:-1]
+    return path.replace("\\", "/").lstrip("./")
+
+
+def is_file_excluded(repo_name: str, file_path: str, patterns: list[str] | None = None) -> bool:
+    """Controleer of een bestandspad binnen een project uitgesloten is van GitHub-sync."""
+    active_patterns = patterns if patterns is not None else get_repo_excluded_patterns(repo_name)
+    if not active_patterns:
+        return False
+    norm_path = _clean_git_path(file_path)
+    if not norm_path:
+        return False
+    path_lower = norm_path.lower()
+    basename_lower = os.path.basename(path_lower)
+    for raw_pat in active_patterns:
+        pat = _clean_git_path(raw_pat).lower()
+        if not pat:
+            continue
+        if pat.endswith("/"):
+            if path_lower.startswith(pat) or f"/{pat}" in f"/{path_lower}":
+                return True
+            continue
+        if fnmatch.fnmatchcase(path_lower, pat):
+            return True
+        if "/" not in pat and fnmatch.fnmatchcase(basename_lower, pat):
+            return True
+    return False
 
 
 APP_CONFIG = load_app_config()
@@ -775,7 +978,7 @@ def add_repo_activity(token: str, repositories: list[dict[str, Any]]) -> list[di
 
 def run_git(repo_name: str, args: list[str], timeout: int = 30) -> subprocess.CompletedProcess:
     """Voer een Git-opdracht uit vanuit de lokale map van een project."""
-    command = ["git", *args]
+    command = ["git", "-c", "core.quotepath=false", *args]
     logger.debug("Git-opdracht gestart voor %s: %s", repo_name, args[0] if args else "onbekend")
     try:
         result = run_hidden(
@@ -795,8 +998,55 @@ def run_git(repo_name: str, args: list[str], timeout: int = 30) -> subprocess.Co
     return result
 
 
+def _porcelain_line_is_excluded(repo_name: str, entry: str, patterns: list[str]) -> bool:
+    if not patterns:
+        return False
+    if " -> " in entry:
+        old_path, new_path = entry.split(" -> ", 1)
+        return is_file_excluded(repo_name, old_path, patterns) and is_file_excluded(repo_name, new_path, patterns)
+    return is_file_excluded(repo_name, entry, patterns)
+
+
+def _filter_diff_name_status(repo_name: str, raw_stdout: str, patterns: list[str]) -> list[str]:
+    lines: list[str] = []
+    for raw_line in raw_stdout.splitlines():
+        if not raw_line.strip():
+            continue
+        parts = raw_line.split("\t")
+        paths = [p for p in parts[1:] if p.strip()]
+        if paths and patterns and all(is_file_excluded(repo_name, p, patterns) for p in paths):
+            continue
+        lines.append(raw_line.replace("\t", "  "))
+    return lines
+
+
+def _filter_commit_lines(repo_name: str, revision_range: str, patterns: list[str]) -> list[str]:
+    result = run_git(
+        repo_name,
+        ["log", "--format=__COMMIT__%h %s (%an)", "--name-only", "-n", "20", revision_range],
+    )
+    if result.returncode != 0:
+        return []
+    commits: list[tuple[str, list[str]]] = []
+    for raw_line in result.stdout.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if line.startswith("__COMMIT__"):
+            commits.append((line[len("__COMMIT__"):], []))
+        elif commits:
+            commits[-1][1].append(line)
+    filtered: list[str] = []
+    for header, files in commits:
+        if files and patterns and all(is_file_excluded(repo_name, f, patterns) for f in files):
+            continue
+        filtered.append(header)
+    return filtered
+
+
 def get_local_git_status(repo_name: str, refresh_remote: bool = False) -> dict[str, Any]:
     """Bepaalt of de lokale kopie bestaat, en of die in sync is met github.com."""
+    excluded_patterns = get_repo_excluded_patterns(repo_name)
     if not is_repo_cloned_locally(repo_name):
         return {
             "cloned": False,
@@ -806,6 +1056,7 @@ def get_local_git_status(repo_name: str, refresh_remote: bool = False) -> dict[s
             "behind": 0,
             "has_local_changes": False,
             "changed_files": [],
+            "excluded_patterns": excluded_patterns,
         }
 
     cache_key, fetch_lock = local_git_fetch_lock(repo_name)
@@ -829,8 +1080,8 @@ def get_local_git_status(repo_name: str, refresh_remote: bool = False) -> dict[s
     branch_result = run_git(repo_name, ["rev-parse", "--abbrev-ref", "HEAD"])
     local_branch = branch_result.stdout.strip() if branch_result.returncode == 0 else None
 
-    ahead = 0
-    behind = 0
+    raw_ahead = 0
+    raw_behind = 0
     if local_branch:
         counts = run_git(
             repo_name,
@@ -839,28 +1090,57 @@ def get_local_git_status(repo_name: str, refresh_remote: bool = False) -> dict[s
         if counts.returncode == 0 and counts.stdout.strip():
             parts = counts.stdout.strip().split()
             if len(parts) == 2:
-                behind, ahead = int(parts[0]), int(parts[1])
+                raw_behind, raw_ahead = int(parts[0]), int(parts[1])
 
     status_result = run_git(repo_name, ["status", "--porcelain"])
     changed_files = []
     if status_result.returncode == 0:
         for line in status_result.stdout.splitlines():
             if line.strip():
-                changed_files.append(line[3:].strip())
-
-    in_sync = ahead == 0 and behind == 0 and not changed_files
-
-    def commit_lines(revision_range: str) -> list[str]:
-        if not local_branch or not (ahead or behind):
-            return []
-        result = run_git(repo_name, ["log", "--format=%h %s (%an)", "-n", "20", revision_range])
-        return [line for line in result.stdout.splitlines() if line.strip()] if result.returncode == 0 else []
+                entry = line[3:].strip()
+                if not _porcelain_line_is_excluded(repo_name, entry, excluded_patterns):
+                    changed_files.append(entry)
 
     diff_lines: list[str] = []
-    if local_branch and (ahead or behind):
+    if local_branch and (raw_ahead or raw_behind):
         diff = run_git(repo_name, ["diff", "--name-status", f"HEAD...origin/{local_branch}"])
         if diff.returncode == 0:
-            diff_lines = [line.replace("\t", "  ") for line in diff.stdout.splitlines() if line.strip()]
+            diff_lines = _filter_diff_name_status(repo_name, diff.stdout, excluded_patterns)
+
+    incoming_commits: list[str] = []
+    behind = 0
+    if local_branch and raw_behind:
+        if excluded_patterns and not diff_lines:
+            behind = 0
+            incoming_commits = []
+        else:
+            incoming_commits = _filter_commit_lines(
+                repo_name, f"HEAD..origin/{local_branch}", excluded_patterns
+            )
+            behind = len(incoming_commits) if excluded_patterns else raw_behind
+            if diff_lines and behind == 0:
+                behind = 1
+
+    outgoing_commits: list[str] = []
+    ahead = 0
+    if local_branch and raw_ahead:
+        local_diff_lines: list[str] = []
+        if excluded_patterns:
+            local_diff = run_git(repo_name, ["diff", "--name-status", f"origin/{local_branch}...HEAD"])
+            if local_diff.returncode == 0:
+                local_diff_lines = _filter_diff_name_status(repo_name, local_diff.stdout, excluded_patterns)
+        if excluded_patterns and not local_diff_lines:
+            ahead = 0
+            outgoing_commits = []
+        else:
+            outgoing_commits = _filter_commit_lines(
+                repo_name, f"origin/{local_branch}..HEAD", excluded_patterns
+            )
+            ahead = len(outgoing_commits) if excluded_patterns else raw_ahead
+            if local_diff_lines and ahead == 0:
+                ahead = 1
+
+    in_sync = ahead == 0 and behind == 0 and not changed_files
 
     return {
         "cloned": True,
@@ -870,9 +1150,10 @@ def get_local_git_status(repo_name: str, refresh_remote: bool = False) -> dict[s
         "behind": behind,
         "has_local_changes": bool(changed_files),
         "changed_files": changed_files,
-        "incoming_commits": commit_lines(f"HEAD..origin/{local_branch}"),
-        "outgoing_commits": commit_lines(f"origin/{local_branch}..HEAD"),
+        "incoming_commits": incoming_commits,
+        "outgoing_commits": outgoing_commits,
         "remote_changed_files": diff_lines,
+        "excluded_patterns": excluded_patterns,
     }
 
 
@@ -1272,9 +1553,62 @@ def commit_and_push_changes(
     summary: str,
 ) -> str:
     """Commit lokale wijzigingen, push ze en maak daarna een GitHub-release."""
+    excluded_patterns = get_repo_excluded_patterns(repo_name)
+    try:
+        run_git(repo_name, ["fetch", "--quiet", "origin"], timeout=60)
+    except (OSError, subprocess.SubprocessError) as exc:
+        logger.warning("Remote ophalen voorafgaand aan commit mislukt voor %s (%s).", repo_name, type(exc).__name__)
+
+    counts = run_git(
+        repo_name,
+        ["rev-list", "--left-right", "--count", f"origin/{default_branch}...HEAD"],
+    )
+    raw_behind = 0
+    if counts.returncode == 0 and counts.stdout.strip():
+        parts = counts.stdout.strip().split()
+        if len(parts) == 2:
+            raw_behind = int(parts[0])
+
+    if raw_behind > 0:
+        remote_diff = run_git(repo_name, ["diff", "--name-status", f"HEAD...origin/{default_branch}"])
+        non_excluded_remote_changes = _filter_diff_name_status(
+            repo_name,
+            remote_diff.stdout if remote_diff.returncode == 0 else "",
+            excluded_patterns,
+        )
+        if non_excluded_remote_changes:
+            raise GitHubApiError(
+                409,
+                "GitHub bevat nieuwere wijzigingen in projectbestanden. "
+                "Haal eerst de laatste versie van GitHub op voordat je pusht.",
+            )
+        soft_reset = run_git(repo_name, ["reset", "--soft", f"origin/{default_branch}"], timeout=60)
+        if soft_reset.returncode != 0:
+            raise GitHubApiError(
+                500,
+                f"Kon lokale branch niet gelijktrekken met GitHub: "
+                f"{soft_reset.stderr.strip() or soft_reset.stdout.strip()}",
+            )
+
     add_result = run_git(repo_name, ["add", "-A"])
     if add_result.returncode != 0:
         raise GitHubApiError(500, f"Kon wijzigingen niet stagen: {add_result.stderr.strip()}")
+
+    if excluded_patterns:
+        staged = run_git(repo_name, ["diff", "--cached", "--name-only"])
+        if staged.returncode == 0:
+            excluded_staged = [
+                path.strip()
+                for path in staged.stdout.splitlines()
+                if path.strip() and is_file_excluded(repo_name, path.strip(), excluded_patterns)
+            ]
+            if excluded_staged:
+                logger.info(
+                    "Dynamische bestanden uitgesloten van commit voor %s: %s",
+                    repo_name,
+                    excluded_staged,
+                )
+                run_git(repo_name, ["reset", "HEAD", "--", *excluded_staged])
 
     commit_message = f"{summary}\n\nDoor: {author_name}\nVersie: {version}"
     commit_result = run_git(repo_name, ["commit", "-m", commit_message])
@@ -2073,10 +2407,12 @@ def commit_project_changes(repo_name: str):
 def settings_page():
     window_mode = request.args.get("window") == "1"
     settings_url = url_for("settings_page", window="1") if window_mode else url_for("settings_page")
+    refresh_app_config_if_changed()
     if request.method == "POST":
         new_workspace_root = (request.form.get("workspace_root") or "").strip()
         new_token = (request.form.get("personal_access_token") or "").strip()
         new_log_level = (request.form.get("log_level") or "DEBUG").strip().upper()
+        new_excluded_files = parse_excluded_files_text(request.form.get("excluded_files") or "")
         if new_log_level not in LOG_LEVELS:
             logger.warning("Instellingen niet opgeslagen: ongeldig logniveau.")
             flash("Kies een geldig logniveau.", "error")
@@ -2094,6 +2430,7 @@ def settings_page():
             flash(f"Kon de map niet aanmaken/gebruiken: {exc}", "error")
             return redirect(settings_url)
 
+        current_excluded = normalize_excluded_files(APP_CONFIG.get("excluded_files", DEFAULT_EXCLUDED_FILES))
         changed_fields = []
         if APP_CONFIG.get("workspace_root") != new_workspace_root:
             changed_fields.append("werkmap")
@@ -2103,6 +2440,8 @@ def settings_page():
             changed_fields.append("GitHub-token")
         if normalize_project_view(APP_CONFIG.get("project_view")) != new_project_view:
             changed_fields.append("projectweergave")
+        if current_excluded != new_excluded_files:
+            changed_fields.append("uitgesloten bestanden")
 
         save_app_config(
             {
@@ -2110,6 +2449,7 @@ def settings_page():
                 "workspace_root": new_workspace_root,
                 "personal_access_token": new_token,
                 "log_level": new_log_level,
+                "excluded_files": new_excluded_files,
             }
         )
         configure_app_logging()
@@ -2126,6 +2466,7 @@ def settings_page():
         return redirect(url_for("dashboard"))
 
     record_user_activity("Instellingen geopend", "")
+    current_excluded = APP_CONFIG.get("excluded_files", DEFAULT_EXCLUDED_FILES)
     return render_template(
         "settings.html",
         active_nav="settings_page",
@@ -2133,6 +2474,7 @@ def settings_page():
         personal_access_token=str(APP_CONFIG.get("personal_access_token") or ""),
         log_level=str(APP_CONFIG.get("log_level") or "DEBUG").upper(),
         project_view=normalize_project_view(APP_CONFIG.get("project_view")),
+        excluded_files_text=format_excluded_files_text(current_excluded),
     )
 
 
@@ -2454,6 +2796,7 @@ def _run_browser_and_exit(url: str, port: int) -> None:
 
 
 if __name__ == "__main__":
+    _hide_and_detach_console()
     # Bij pythonw.exe bestaan stdout/stderr niet; voorkom fouten bij schrijven.
     if sys.stdout is None:
         sys.stdout = open(os.devnull, "w")
